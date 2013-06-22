@@ -519,7 +519,7 @@ static int mk_request_process(struct client_session *cs, struct session_request 
         mk_config_host_find(sr->host, &sr->host_conf, &sr->host_alias);
     }
 
-    /* Is requesting an user home directory ? */
+    /* Is requesting a user home directory ? */
     if (config->user_dir &&
         sr->uri_processed.len > 2 &&
         sr->uri_processed.data[1] == MK_USER_HOME) {
@@ -541,7 +541,7 @@ static int mk_request_process(struct client_session *cs, struct session_request 
     int ret;
     ret = mk_plugin_stage_run(MK_PLUGIN_STAGE_20, socket, NULL, cs, sr);
     if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
-        MK_TRACE("STAGE 20 requested close conexion");
+        MK_TRACE("STAGE 20 requested close connection");
         return EXIT_ABORT;
     }
 
