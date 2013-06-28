@@ -98,7 +98,7 @@ plugin can be registered to use multiple hooks just adding the right identifiers
  Core  |
 -------+---------------------------------------------------------------------------------
  The Core plugins allow other plugins to define some data in the process context or 
- thread context depending of it needs.
+ thread context depending on its needs.
 ---------+-----------------------+-------------------+-----------------------------------
  Context |  Identified by        | Hook function     | Description
 ---------+-----------------------+-------------------+-----------------------------------   
