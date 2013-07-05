@@ -31,31 +31,35 @@ struct proxy_server_entry
 {
 	char *hostname;
 	int port;
-}
+};
 
 struct proxy_server_entry_array
 {
 	unsigned int length;
 	struct proxy_server_entry entry[];
-}
+};
+
+struct match_regex_array
+{
+	unsigned int length;
+	regex_t entry[];
+};
 
 struct proxy_cnf_default_values
 {
 	struct proxy_server_entry_array *server_list;
 	enum balancer_type balancer_type;
-}
+};
 
 struct proxy_entry
 {
 	struct proxy_server_entry_array *server_list;
 	enum balancer_type balancer_type;
-	//match_list
-	//TODO match_rewrite
-	
-}
+	struct match_regex_array *regex_array;
+};
 
 struct proxy_entry_array
 {
 	unsigned int length;
 	struct proxy_entry entry[];
-}
+};

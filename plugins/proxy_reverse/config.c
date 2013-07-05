@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 
 #include "MKPlugin.h"
+#include <regex.h>
 #include "config.h"
 
 static void free_proxy_server_entry_array(struct proxy_server_entry_array *server_list)
@@ -10,7 +11,7 @@ static void free_proxy_server_entry_array(struct proxy_server_entry_array *serve
 	if(!server_list)return ;
 	for(;i<server_list->length;i++)
 		{
-			mk_api->mem_free(server_list->proxy_server_entry[i]->hostname);
+			mk_api->mem_free(server_list->entry[i].hostname);
 		}
 	mk_api->mem_free(server_list);
 }
@@ -19,6 +20,7 @@ static struct proxy_server_entry_array *proxy_parse_ServerList(char *server_addr
 {
 	char *tmp;
 	int server_num=0;
+	struct mk_string_line *entry;
 	struct mk_list *line,*head;
 	struct mk_list *server_list=mk_api->str_split_line(server_addr);
 	struct proxy_server_entry_array *proxy_server_array=0;
@@ -42,15 +44,15 @@ static struct proxy_server_entry_array *proxy_parse_ServerList(char *server_addr
 				server_num=0;
 				mk_list_foreach(head, line)
 				{
-					entry_match = mk_list_entry(head, struct mk_string_line, _head);
-					if (!entry_match)
+					entry = mk_list_entry(head, struct mk_string_line, _head);
+					if (!entry)
 					{
 						mk_err("ProxyReverse: Invalid configuration ServerList");
 						mk_api->mem_free(proxy_server_array);
 						return 0;
 					}
 					
-					tmp = memchr(entry_match->val, ':', entry_match->len);
+					tmp = memchr(entry->val, ':', entry->len);
 					if(!tmp)
 					{
 						mk_err("ProxyReverse: Invalid configuration ServerList");
@@ -60,7 +62,7 @@ static struct proxy_server_entry_array *proxy_parse_ServerList(char *server_addr
 					
 					*tmp = '\0';
 					
-					proxy_server_array->entry[server_num].hostname=strdup(entry_match->val);
+					proxy_server_array->entry[server_num].hostname=strdup(entry->val);
 					proxy_server_array->entry[server_num].port=strtol(tmp+1,0,10);
 
 					server_num++;
@@ -110,15 +112,30 @@ static void proxy_config_read_defaults(struct proxy_cnf_default_values *default_
 		}
 	
 	server_addr=mk_api->config_section_getval(section, "ServerList", MK_CONFIG_VAL_STR);
-	if(server_addr)default_values->server_list=proxy_parse_ServerAddr(server_addr);
+	if(server_addr)default_values->server_list=proxy_parse_ServerList(server_addr);
 }
 
+static void str_to_regex(char *str, regex_t *reg) // From the CGI Plugin
+{
+    char *p = str;
+    while (*p) {
+        if (*p == ' ') *p = '|';
+        p++;
+    }
 
+    int ret = regcomp(reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
+    if (ret) {
+        char tmp[80];
+        regerror(ret, reg, tmp, 80);
+        mk_err("ProxyReverse: Failed to compile regex: %s", tmp);
+    }
+}
 
 static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_default_values *default_values, struct mk_config *config, int entry_num)
 {
-	struct mk_config *config;
+	int i=0;
     struct mk_config_section *section;
+	struct mk_config_entry *entry;
 	struct mk_list *head;
 	struct proxy_entry_array *entry_array=0;
 	struct proxy_cnf_default_values tmp_values;
@@ -137,23 +154,57 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 				//Config Checks
 				if(!tmp_values.balancer_type && !default_values->balancer_type ) {
 					mk_err("ProxyReverse: PROXY_ENTRY doesn't have LoadBalancer specified.");
+					free_proxy_server_entry_array(tmp_values.server_list);
 					goto error;
 					}
 				else if(!tmp_values.server_list && !default_values->server_list ) {
 					mk_err("ProxyReverse: PROXY_ENTRY doesn't have ServerList specified.");
+					free_proxy_server_entry_array(tmp_values.server_list);
 					goto error;
 				}
-				
-			if(tmp_values.balancer_type)entry_array.entry[entry_num].balancer_type=tmp_values.balancer_type;
-			else entry_array.entry[entry_num].balancer_type=default_values->balancer_type;
 			
-			if(tmp_values.server_list)entry_array.entry[entry_num].server_list=proxy_server_entry_array_dup(tmp_values.server_list);
-			else entry_array.entry[entry_num].server_list=proxy_server_entry_array_dup(default_values->server_list);
+			mk_list_foreach(head, &section->entries) {
+				entry = mk_list_entry(head, struct mk_config_entry, _head);
+				if (strncasecmp(entry->key, "Match", strlen(entry->key)) == 0) {					
+					i++;
+				}
+			}
+			if(!i)
+				{
+					mk_err("ProxyReverse: PROXY_ENTRY doesn't have any Matches specified.");
+					free_proxy_server_entry_array(tmp_values.server_list);
+					goto error;	
+				}
+			else
+				{
+					entry_array->entry[entry_num].regex_array=malloc(sizeof(struct match_regex_array)+sizeof(regex_t)*i);
+					if(!entry_array->entry[entry_num].regex_array)
+						{
+						mk_err("ProxyReverse: PROXY_ENTRY Memory error.");
+						goto error;	
+						}
+					entry_array->entry[entry_num].regex_array->length=i;
+					i=0;
+				}
+				
+			if(tmp_values.balancer_type)entry_array->entry[entry_num].balancer_type=tmp_values.balancer_type;
+			else entry_array->entry[entry_num].balancer_type=default_values->balancer_type;
+			
+			if(tmp_values.server_list)entry_array->entry[entry_num].server_list=proxy_server_entry_array_dup(tmp_values.server_list);
+			else entry_array->entry[entry_num].server_list=proxy_server_entry_array_dup(default_values->server_list);
 			//read matches
 			
 			free_proxy_server_entry_array(tmp_values.server_list);
 			
-			//TODO read the Matches..
+			mk_list_foreach(head, &section->entries) {
+				entry = mk_list_entry(head, struct mk_config_entry, _head);
+				if (strncasecmp(entry->key, "Match", strlen(entry->key)) == 0) {
+					str_to_regex(entry->val, &(entry_array->entry[entry_num].regex_array->entry[i]));
+					i++;
+				}
+			}
+			
+			//TODO to handle LoadBalancer specific configs
 			
 			entry_num++;
 		}
@@ -167,7 +218,7 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 	return 0;
 }
 
-struct proxy_entry_array *cgi_read_config(const char * const path)
+struct proxy_entry_array *proxy_reverse_read_config(const char * const path)
 {
 	struct proxy_cnf_default_values default_values;
 	//TODO to check the mallocs for errors
@@ -177,8 +228,9 @@ struct proxy_entry_array *cgi_read_config(const char * const path)
 	struct mk_list *head;
 	struct proxy_entry_array *entry_array=0;
 	int proxy_entries=0;
+	long unsigned len=0;
 	
-	mk_api->str_build(&conf_path, &len, "%s/proxy_reverse.conf", confdir);
+	mk_api->str_build(&conf_path, &len, "%s/proxy_reverse.conf", path);
 	config = mk_api->config_create(conf_path);
 	mk_api->mem_free(conf_path);
 	
