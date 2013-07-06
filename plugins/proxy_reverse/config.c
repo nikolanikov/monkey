@@ -136,7 +136,7 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 	int i=0;
     struct mk_config_section *section;
 	struct mk_config_entry *entry;
-	struct mk_list *head;
+	struct mk_list *head,*head_match;
 	struct proxy_entry_array *entry_array=0;
 	struct proxy_cnf_default_values tmp_values;
 	
@@ -163,8 +163,8 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 					goto error;
 				}
 			
-			mk_list_foreach(head, &section->entries) {
-				entry = mk_list_entry(head, struct mk_config_entry, _head);
+			mk_list_foreach(head_match, &section->entries) {
+				entry = mk_list_entry(head_match, struct mk_config_entry, _head);
 				if (strncasecmp(entry->key, "Match", strlen(entry->key)) == 0) {					
 					i++;
 				}
@@ -196,8 +196,8 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 			
 			free_proxy_server_entry_array(tmp_values.server_list);
 			
-			mk_list_foreach(head, &section->entries) {
-				entry = mk_list_entry(head, struct mk_config_entry, _head);
+			mk_list_foreach(head_match, &section->entries) {
+				entry = mk_list_entry(head_match, struct mk_config_entry, _head);
 				if (strncasecmp(entry->key, "Match", strlen(entry->key)) == 0) {
 					str_to_regex(entry->val, &(entry_array->entry[entry_num].regex_array->entry[i]));
 					i++;
@@ -230,6 +230,8 @@ struct proxy_entry_array *proxy_reverse_read_config(const char * const path)
 	int proxy_entries=0;
 	long unsigned len=0;
 	
+	default_values.server_list=0;
+	default_values.balancer_type=0;
 	mk_api->str_build(&conf_path, &len, "%s/proxy_reverse.conf", path);
 	config = mk_api->config_create(conf_path);
 	mk_api->mem_free(conf_path);
@@ -253,7 +255,6 @@ struct proxy_entry_array *proxy_reverse_read_config(const char * const path)
 		return ;//ERROR
 	}
 	
-	proxy_config_read_defaults(&default_values,section);
 	
 	entry_array=proxy_config_read_entries(&default_values,config,proxy_entries);
 	

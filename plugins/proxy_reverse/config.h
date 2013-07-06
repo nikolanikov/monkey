@@ -63,3 +63,5 @@ struct proxy_entry_array
 	unsigned int length;
 	struct proxy_entry entry[];
 };
+
+struct proxy_entry_array *proxy_reverse_read_config(const char *);
