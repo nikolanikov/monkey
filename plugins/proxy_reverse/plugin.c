@@ -2,18 +2,16 @@
 #include <unistd.h>
 
 #include "types.h"
-
+#include "regex.h"
+#include "config.h"
 #include "MKPlugin.h"
 
 #define RESPONSE_BUFFER_MIN 4096
 #define RESPONSE_BUFFER_MAX 65536
 
-//MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.1", MK_PLUGIN_STAGE_30 | MK_PLUGIN_CORE_THCTX | MK_PLUGIN_STAGE_10 | MK_PLUGIN_STAGE_20 | MK_PLUGIN_STAGE_40 | MK_PLUGIN_STAGE_50);
-MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.1", MK_PLUGIN_STAGE_30 | MK_PLUGIN_CORE_THCTX | MK_PLUGIN_STAGE_10 | MK_PLUGIN_STAGE_20 | MK_PLUGIN_STAGE_50);
+MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.1", MK_PLUGIN_STAGE_30 | MK_PLUGIN_CORE_THCTX);
 
 #include <stdio.h>
-
-// TODO one additional free line is required so that each subsequent request is parsed successfully
 
 /* TODO fix comments to work with ANSI C */
 
@@ -39,6 +37,8 @@ struct proxy_peer
 };
 
 static int log;
+
+static struct proxy_server_entry *slave;
 
 static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 {
@@ -128,10 +128,10 @@ static int proxy_close(int fd)
 static int slave_connect(void)
 {
 	/* TODO choose slave based on the config file and on the algorithm used */
-	int slave = mk_api->socket_connect("127.0.0.1", 8080);
-	if (slave < 0) ; // TODO
-	mk_api->socket_set_nonblocking(slave);
-	return slave;
+	int socket = mk_api->socket_connect(slave->hostname, slave->port);
+	if (socket < 0) ; // TODO
+	mk_api->socket_set_nonblocking(socket);
+	return socket;
 }
 
 int _mkp_init(struct plugin_api **api, char *confdir)
@@ -140,58 +140,15 @@ int _mkp_init(struct plugin_api **api, char *confdir)
 
 	pthread_key_create(&proxy_key, 0);
 
-	char *file = NULL;
-	unsigned long len;
-	struct mk_config *conf;
-	struct mk_config_section *section;
-	char *save = 0;
+	struct proxy_entry_array *config = proxy_reverse_read_config(confdir);
+	if (!config->length) return -1;
 
-	mk_api->str_build(&file, &len, "%sproxy_reverse.conf", confdir);
-	conf = mk_api->config_create(file);
-	section = mk_api->config_section_get(conf, "ProxyReverse");
+	struct proxy_server_entry_array *entry = config->entry[0].server_list;
+	if (!entry->length) return -1;
 
-	if (section)
-	{
-		struct mk_list *head;
-		struct mk_list *line;
-		struct mk_list *head_match;
-		struct mk_config_entry *entry;
-		struct mk_string_line *entry_match;
+	slave = entry->entry;
 
-		mk_list_foreach(head, &section->entries)
-		{
-			entry = mk_list_entry(head, struct mk_config_entry, _head);
-			if (strncasecmp(entry->key, "SavePath", strlen(entry->key)) == 0)
-			{
-				line = mk_api->str_split_line(entry->val);
-				if (!line) continue;
-
-				mk_list_foreach(head_match, line)
-				{
-					entry_match = mk_list_entry(head_match, struct mk_string_line, _head);
-					if (!entry_match)
-					{
-						mk_err("ProxyReverse: Invalid configuration key");
-						exit(EXIT_FAILURE);
-					}
-
-					save = strdup(entry_match->val);
-
-					break;
-				}
-			}
-		}
-	}
-
-	free(file);
-	mk_api->config_free(conf);
-
-	if (save)
-	{
-		log = creat(save, 0644);
-		free(save);
-	}
-	else ; // TODO
+	return 0;
 }
 
 /*int _mkp_core_prctx(struct server_config *config)
@@ -304,7 +261,7 @@ int _mkp_event_read(int socket)
 		size_t left = peer->response.size - peer->response.total;
 		if (!left)
 		{
-			if (!request_buffer_adjust(peer->response.size + 1))
+			if (!response_buffer_adjust(peer, peer->response.size + 1))
 			{
 				// Don't poll for reading until we have free space in the buffer.
 				//peer->mode_slave &= ~MK_EPOLL_READ;
@@ -361,7 +318,6 @@ int _mkp_event_write(int socket)
 
 			if (peer->response.index == peer->response.total)
 			{
-				//peer->sr->bytes_to_send = 0;
 				mk_api->http_request_end(socket);
 				return MK_PLUGIN_RET_EVENT_CONTINUE;
 			}
@@ -373,8 +329,6 @@ int _mkp_event_write(int socket)
 		mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_READ, MK_EPOLL_LEVEL_TRIGGERED);
 
 		return MK_PLUGIN_RET_EVENT_CONTINUE;
-
-		//return MK_PLUGIN_RET_EVENT_OWNED;
 
 		/*peer->mode_client &= ~MK_EPOLL_WRITE;
 		mk_api->event_socket_change_mode(peer->fd_client, peer->mode_client, MK_EPOLL_LEVEL_TRIGGERED);*/
