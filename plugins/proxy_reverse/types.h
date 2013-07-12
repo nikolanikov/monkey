@@ -27,10 +27,8 @@ struct string
 // Examples:
 //  struct string name = string(name_data, name_length);
 //  struct string key = string("uuid");
-#define string(...) ( \
-		(struct {struct string string; size_t _;}) \
-		{__VA_ARGS__, sizeof(__VA_ARGS__) - 1} \
-	).string
+#define _mkpr_string(data, length, ...) {(data), (length)}
+#define string(...) _mkpr_string(__VA_ARGS__, sizeof(__VA_ARGS__) - 1)
 
 // Creates a new string and sets its data and length accordingly. The string must be freed with free().
 struct string *string_alloc(const char *data, size_t length);

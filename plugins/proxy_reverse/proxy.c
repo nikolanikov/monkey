@@ -129,7 +129,7 @@ static int slave_connect(void)
 {
 	/* TODO choose slave based on the config file and on the algorithm used */
 	int socket = mk_api->socket_connect(slave->hostname, slave->port);
-	if (socket < 0) ; // TODO
+	if (socket < 0) return -1;
 	mk_api->socket_set_nonblocking(socket);
 	return socket;
 }
@@ -175,15 +175,6 @@ void _mkp_exit(void)
 {
 	close(log);
 }
-
-int _mkp_stage_10(unsigned int socket, struct sched_connection *conx)
-{fprintf(stderr, "10\n"); return MK_PLUGIN_RET_NOT_ME;}
-int _mkp_stage_20(struct client_session *cs, struct session_request *sr)
-{fprintf(stderr, "20\n"); return MK_PLUGIN_RET_NOT_ME;}
-int _mkp_stage_40(struct client_session *cs, struct session_request *sr)
-{fprintf(stderr, "40\n"); return MK_PLUGIN_RET_CONTINUE;}
-int _mkp_stage_50(int sockfd)
-{fprintf(stderr, "50\n"); return MK_PLUGIN_RET_NOT_ME;}
 
 int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct session_request *sr)
 {
@@ -287,7 +278,6 @@ int _mkp_event_read(int socket)
 		peer = proxy_peer_get(&context->client, socket);
 		if (peer)
 		{
-			// TODO this doesn't work
 			fprintf(stderr, "C ->  \n");
 			mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_RW, MK_EPOLL_LEVEL_TRIGGERED);
 			return MK_PLUGIN_RET_EVENT_NEXT;
