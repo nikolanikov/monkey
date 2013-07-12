@@ -65,3 +65,5 @@ struct proxy_entry_array
 };
 
 struct proxy_entry_array *proxy_reverse_read_config(const char *);
+
+struct proxy_entry *proxy_check_match(char *, struct proxy_entry_array *);

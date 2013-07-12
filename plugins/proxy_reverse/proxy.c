@@ -1,10 +1,9 @@
 #include <fcntl.h>
+#include <regex.h>
 #include <unistd.h>
 
 #include "types.h"
-#include "regex.h"
 #include "config.h"
-#include "MKPlugin.h"
 
 #define RESPONSE_BUFFER_MIN 4096
 #define RESPONSE_BUFFER_MAX 65536
@@ -38,7 +37,7 @@ struct proxy_peer
 
 static int log;
 
-static struct proxy_server_entry *slave;
+static struct proxy_entry_array *proxy_config;
 
 static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 {
@@ -73,6 +72,27 @@ static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 	peer->response.size = size;
 
 	return true;
+}
+
+static int slave_connect(mk_pointer uri, struct proxy_entry_array *proxy_config)
+{
+	char *string = malloc(uri.len + 1);
+	if (!string) return -1;
+	memcpy(string, uri.data, uri.len);
+	string[uri.len] = 0;
+	struct proxy_entry *match = proxy_check_match(string, proxy_config);
+	free(string);
+	if (!match) return -1;
+
+	struct proxy_server_entry_array *entry = match->server_list;
+	if (!entry->length) return -1;
+	struct proxy_server_entry *slave = entry->entry;
+
+	/* TODO choose slave based on the config file and on the algorithm used */
+	int socket = mk_api->socket_connect(slave->hostname, slave->port);
+	if (socket < 0) return -1;
+	mk_api->socket_set_nonblocking(socket);
+	return socket;
 }
 
 static int proxy_peer_add(struct dict *dict, int fd, struct proxy_peer *peer)
@@ -125,28 +145,14 @@ static int proxy_close(int fd)
 	return MK_PLUGIN_RET_EVENT_CLOSE;
 }
 
-static int slave_connect(void)
-{
-	/* TODO choose slave based on the config file and on the algorithm used */
-	int socket = mk_api->socket_connect(slave->hostname, slave->port);
-	if (socket < 0) return -1;
-	mk_api->socket_set_nonblocking(socket);
-	return socket;
-}
-
 int _mkp_init(struct plugin_api **api, char *confdir)
 {
 	mk_api = *api;
 
 	pthread_key_create(&proxy_key, 0);
 
-	struct proxy_entry_array *config = proxy_reverse_read_config(confdir);
-	if (!config->length) return -1;
-
-	struct proxy_server_entry_array *entry = config->entry[0].server_list;
-	if (!entry->length) return -1;
-
-	slave = entry->entry;
+	proxy_config = proxy_reverse_read_config(confdir);
+	if (!proxy_config->length) return -1;
 
 	return 0;
 }
@@ -201,7 +207,7 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 	}
 	else
 	{
-		int slave = slave_connect();
+		int slave = slave_connect(sr->uri_processed, proxy_config);
 		if (slave < 0) ; // TODO
 
 		peer = malloc(sizeof(struct proxy_peer));

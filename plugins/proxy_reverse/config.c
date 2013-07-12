@@ -1,9 +1,27 @@
 //IMPORTANT, not tested or compiled, just prototype
 #define _GNU_SOURCE
 
-#include "MKPlugin.h"
 #include <regex.h>
+
+#include "types.h"
 #include "config.h"
+
+struct proxy_entry *proxy_check_match(char *url, struct proxy_entry_array *config)
+{
+	int i,u;
+
+	for(i=0;i<config->length;i++)
+	{
+		for(u=0;u<config->entry[i].regex_array->length;u++)
+		{
+			if (!regexec(&config->entry[i].regex_array->entry[u],url,0,NULL,0)) {
+				return &config->entry[i];
+			}
+		}
+	}
+
+	return 0;
+}
 
 static void free_proxy_server_entry_array(struct proxy_server_entry_array *server_list)
 {
@@ -252,7 +270,7 @@ struct proxy_entry_array *proxy_reverse_read_config(const char * const path)
 	{
 		free_proxy_server_entry_array(default_values.server_list);
 		mk_err("ProxyReverse: There aren't any PROXY_ENTRY in the configuration file.");
-		return ;//ERROR
+		return 0;//ERROR
 	}
 	
 	

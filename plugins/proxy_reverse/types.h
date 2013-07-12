@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "MKPlugin.h"
+
 // System resources are not sufficient to handle the request.
 #define ERROR_MEMORY                -1
 
