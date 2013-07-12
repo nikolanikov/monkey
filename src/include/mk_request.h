@@ -164,8 +164,8 @@ struct session_request
     int protocol;
     mk_pointer protocol_p;
 
-    /* If request specify Connection: close, Monkey will
-     * close the connection after send the response, by
+    /* If request specifies Connection: close, Monkey will
+     * close the connection after sending the response; by
      * default this var is set to VAR_OFF;
      */
     int close_now;

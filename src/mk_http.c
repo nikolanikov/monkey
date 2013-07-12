@@ -376,7 +376,7 @@ int mk_http_init(struct client_session *cs, struct session_request *sr)
 
 
     if (mk_file_get_info(sr->real_path.data, &sr->file_info) != 0) {
-        /* if the resource requested doesn't exists, let's
+        /* if the resource requested doesn't exist, let's
          * check if some plugin would like to handle it
          */
         MK_TRACE("No file, look for handler plugin");
@@ -404,7 +404,7 @@ int mk_http_init(struct client_session *cs, struct session_request *sr)
         }
     }
 
-    /* is it a valid directory ? */
+    /* is it a valid directory? */
     if (sr->file_info.is_directory == MK_TRUE) {
         /* Send redirect header if end slash is not found */
         if (mk_http_directory_redirect_check(cs, sr) == -1) {

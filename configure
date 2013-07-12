@@ -349,7 +349,7 @@ skip_plugin()
         return 1
     fi
 
-    # does it contains a proper Makefile.in ?
+    # does it contain a proper Makefile.in ?
     if test ! -e $path/Makefile.in ; then
         return 1
     fi
