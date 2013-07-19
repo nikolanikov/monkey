@@ -6,7 +6,7 @@ CC_QUIET= @echo -n; $CC
 CFLAGS	= $CFLAGS
 LDFLAGS = $LDFLAGS
 DEFS    = $DEFS
-OBJECTS = dictionary.o string.o config.o proxy.o
+OBJECTS = dictionary.o string.o config.o proxy.o balancer.o
 
 -include $(OBJECTS:.o=.d)
 
