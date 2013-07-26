@@ -12,7 +12,7 @@ static uint32_t hash(const char *string, size_t size)
 	uint32_t result = 0;
 	size_t i;
 	for(i = 0; i < size; ++i)
-		result = string[i++] + (result << 6) + (result << 16) - result;
+		result = string[i] + (result << 6) + (result << 16) - result;
 	return result;
 }
 

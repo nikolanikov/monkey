@@ -117,18 +117,36 @@ static void proxy_config_read_defaults(struct proxy_cnf_default_values *default_
 	
 	load_balancer=mk_api->config_section_getval(section, "LoadBalancer", MK_CONFIG_VAL_STR);
 	if(load_balancer)
+	{
+		//CHECK currently I'm looking just for first char, because every type load balancer is starting with different char
+		//PROS: it makes the code smaller and a little faster, for emb devices the static file size is important because of the small flash size;
+		//CONS: syntax checks for the LoadBalancer names are not possible.
+		switch (*load_balancer)
 		{
-			//CHECK currently I'm looking just for first char, because every type load balancer is starting with different char
-			//PROS: it makes the code smaller and a little faster, for emb devices the static file size is important because of the small flash size;
-			//CONS: syntax checks for the LoadBalancer names are not possible.
-			if(load_balancer[0]=='F')default_values->balancer_type=FirstAlive;
-			else if(load_balancer[0]=='R')default_values->balancer_type=RoundRobin;
-			else if(load_balancer[0]=='W')default_values->balancer_type=WRoundRobin;
-			else if(load_balancer[0]=='H')default_values->balancer_type=Hash;
-		
-		mk_api->mem_free(load_balancer);
+		case 'N':
+			default_values->balancer_type = Naive;
+			break;
+		case 'F':
+			default_values->balancer_type = FirstAlive;
+			break;
+		case 'R':
+			default_values->balancer_type = RoundRobin;
+			break;
+		case 'L':
+			if (load_balancer[1] == 'o') default_values->balancer_type = LockingRoundRobin;
+			else if (load_balancer[1] == 'e') default_values->balancer_type = LeastConnections;
+			break;
 		}
-	
+		/*
+		if(load_balancer[0]=='F')default_values->balancer_type=FirstAlive;
+		else if(load_balancer[0]=='R')default_values->balancer_type=RoundRobin;
+		else if(load_balancer[0]=='W')default_values->balancer_type=WRoundRobin;
+		else if(load_balancer[0]=='H')default_values->balancer_type=Hash;
+		*/
+
+		mk_api->mem_free(load_balancer);
+	}
+
 	server_addr=mk_api->config_section_getval(section, "ServerList", MK_CONFIG_VAL_STR);
 	if(server_addr)default_values->server_list=proxy_parse_ServerList(server_addr);
 }

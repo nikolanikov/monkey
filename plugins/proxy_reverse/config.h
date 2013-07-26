@@ -2,10 +2,15 @@
 
 enum balancer_type
 {
-	Hash=1,
+	Naive = 1,
+	FirstAlive = 2,
+	RoundRobin = 3,
+	LockingRoundRobin = 4,
+	LeastConnections = 5,
+	/*Hash=1,
 	FirstAlive,
 	RoundRobin,
-	WRoundRobin
+	WRoundRobin*/
 };
 
 /*

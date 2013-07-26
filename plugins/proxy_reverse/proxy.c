@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <regex.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "types.h"
@@ -34,6 +35,7 @@ struct proxy_peer
 		char *buffer;
 		size_t size, index, total;
 	} response;
+	void *connection;
 };
 
 static int log;
@@ -75,25 +77,38 @@ static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 	return true;
 }
 
-static int slave_connect(int client, const struct session_request *sr, struct proxy_entry_array *proxy_config)
+static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *proxy_config)
 {
+	const struct session_request *sr = peer->sr;
 	char *string = malloc(sr->uri_processed.len + 1);
 	if (!string) return -1;
 	memcpy(string, sr->uri_processed.data, sr->uri_processed.len);
 	string[sr->uri_processed.len] = 0;
+
 	struct proxy_entry *match = proxy_check_match(string, proxy_config);
 	free(string);
 	if (!match) return -1;
 
+	peer->connection = 0;
+
 	switch (match->balancer_type)
 	{
-	case Hash:
+	case Naive:
+		return proxy_balance_naive(sr, match->server_list, time(0));
 	case FirstAlive:
+		return proxy_balance_firstalive(sr, match->server_list);
 	case RoundRobin:
-	case WRoundRobin:
-		// TODO is client necessary?
-		return proxy_balance_fdid_based(client, sr, match->server_list);
+		return proxy_balance_rr_lockless(sr, match->server_list);
+	case LockingRoundRobin:
+		return proxy_balance_rr_locking(sr, match->server_list);
+	case LeastConnections:
+		return proxy_balance_leastconnections(sr, match->server_list, &peer->connection);
 	}
+}
+
+static void slave_disconnect(const struct proxy_peer *peer)
+{
+	if (peer->connection) proxy_balance_close(peer->connection);
 }
 
 static int proxy_peer_add(struct dict *dict, int fd, struct proxy_peer *peer)
@@ -140,6 +155,8 @@ static int proxy_close(int fd)
 	if (fd == peer->fd_client) mk_api->socket_close(peer->fd_slave);
 	else mk_api->socket_close(peer->fd_client);
 
+	slave_disconnect(peer);
+
 	free(peer->response.buffer);
 	free(peer);
 
@@ -154,6 +171,8 @@ int _mkp_init(struct plugin_api **api, char *confdir)
 
 	proxy_config = proxy_reverse_read_config(confdir);
 	if (!proxy_config->length) return -1;
+
+	if (proxy_balance_init(proxy_config) < 0) return -1;
 
 	return 0;
 }
@@ -208,17 +227,20 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 	}
 	else
 	{
-		int slave = slave_connect(cs->socket, sr, proxy_config);
-		if (slave < 0) ; // TODO
-
 		peer = malloc(sizeof(struct proxy_peer));
 		if (!peer) return MK_PLUGIN_RET_CLOSE_CONX;
 
+		peer->sr = sr;
 		peer->fd_client = cs->socket;
-		peer->fd_slave = slave;
+		peer->fd_slave = slave_connect(peer, proxy_config);
+		if (peer->fd_slave < 0)
+		{
+			free(peer);
+			return MK_PLUGIN_RET_CLOSE_CONX; // TODO
+		}
+
 		peer->mode_client = MK_EPOLL_SLEEP;
 		peer->mode_slave = MK_EPOLL_WRITE;
-		peer->sr = sr;
 
 		peer->request_index = 0;
 
@@ -232,7 +254,7 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 		response_buffer_adjust(peer, RESPONSE_BUFFER_MIN);
 
 		if (proxy_peer_add(&context->client, cs->socket, peer)) ; // TODO
-		if (proxy_peer_add(&context->slave, slave, peer)) ; // TODO
+		if (proxy_peer_add(&context->slave, peer->fd_slave, peer)) ; // TODO
 	}
 
 	return MK_PLUGIN_RET_CONTINUE;
