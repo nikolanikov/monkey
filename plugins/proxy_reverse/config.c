@@ -8,7 +8,7 @@
 
 struct proxy_entry *proxy_check_match(char *url, struct proxy_entry_array *config)
 {
-	int i,u;
+	size_t i,u;
 
 	for(i=0;i<config->length;i++)
 	{
@@ -25,7 +25,7 @@ struct proxy_entry *proxy_check_match(char *url, struct proxy_entry_array *confi
 
 static void free_proxy_server_entry_array(struct proxy_server_entry_array *server_list)
 {
-	int i=0;
+	size_t i=0;
 	if(!server_list)return ;
 	for(;i<server_list->length;i++)
 		{
@@ -94,7 +94,7 @@ static struct proxy_server_entry_array *proxy_parse_ServerList(char *server_addr
 static struct proxy_server_entry_array *proxy_server_entry_array_dup(struct proxy_server_entry_array *array_to_dup)
 {
 struct proxy_server_entry_array *proxy_server_array;
-int i=0;
+	size_t i=0;
 	proxy_server_array=mk_api->mem_alloc( sizeof(struct proxy_server_entry_array) + sizeof(struct proxy_server_entry)*array_to_dup->length );
 	if(!proxy_server_array)return 0;
 	proxy_server_array->length=array_to_dup->length;
@@ -114,8 +114,18 @@ static void proxy_config_read_defaults(struct proxy_cnf_default_values *default_
 	char *load_balancer;
 	default_values->balancer_type=0;
 	default_values->server_list=0;
+	default_values->count=2;
+	default_values->timeout=60;
 	
 	load_balancer=mk_api->config_section_getval(section, "LoadBalancer", MK_CONFIG_VAL_STR);
+	
+	
+	default_values->count = (int)mk_api->config_section_getval(section, "AttemptsCount", MK_CONFIG_VAL_NUM);
+	if(default_values->count<0)default_values->count=0;
+	
+	default_values->timeout = (int) mk_api->config_section_getval(section, "OfflineTimeOut", MK_CONFIG_VAL_NUM);
+	if(default_values->timeout<0)default_values->timeout=0;
+	
 	if(load_balancer)
 	{
 		//CHECK currently I'm looking just for first char, because every type load balancer is starting with different char
@@ -229,6 +239,9 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 			if(tmp_values.server_list)entry_array->entry[entry_num].server_list=proxy_server_entry_array_dup(tmp_values.server_list);
 			else entry_array->entry[entry_num].server_list=proxy_server_entry_array_dup(default_values->server_list);
 			//read matches
+			
+			entry_array->entry[entry_num].count=default_values->count;
+			entry_array->entry[entry_num].timeout=default_values->timeout;
 			
 			free_proxy_server_entry_array(tmp_values.server_list);
 			

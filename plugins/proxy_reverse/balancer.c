@@ -12,11 +12,15 @@ static pthread_mutex_t next_mutex = PTHREAD_MUTEX_INITIALIZER;
 struct dict servers;
 static pthread_mutex_t servers_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static unsigned highavail_count;
+static time_t highavail_timeout;
+
 struct server
 {
-	unsigned response_time; // response time in microseconds
-	time_t offline;
-	// TODO add what we need here
+	unsigned connections;
+	//unsigned response_time; // response time in microseconds
+	unsigned offline_count;
+	time_t offline_last;
 };
 
 static char *format_uint(char *buffer, uint64_t number, uint16_t length)
@@ -56,10 +60,13 @@ int proxy_balance_init(const struct proxy_entry_array *config)
 	size_t i, j;
 	char buffer[SERVER_KEY_SIZE_LIMIT];
 	struct string key;
-	unsigned *value;
+	struct server *value;
 	int status;
 
 	key.data = buffer;
+
+	highavail_count = config->entry[0].count;
+	highavail_timeout = config->entry[0].timeout;
 
 	// Add entry for each slave server in the servers dictionary.
 	for(i = 0; i < config->length; i++)
@@ -68,9 +75,11 @@ int proxy_balance_init(const struct proxy_entry_array *config)
 		{
 			if (key_init(&key, config->entry[i].server_list->entry + j) < 0) return -2;
 
-			value = malloc(sizeof(unsigned));
+			value = malloc(sizeof(struct server));
 			if (!value) return ERROR_MEMORY; // memory error
-			*value = 0;
+			value->connections = 0;
+			value->offline_count = 0;
+			value->offline_last = 0;
 
 			status = dict_add(&servers, &key, value); // dict_add will auto reject all repeated entries
 			if (status == ERROR_MEMORY) return ERROR_MEMORY;
@@ -88,16 +97,59 @@ static int balance_connect(const struct proxy_server_entry *entry)
 	int fd;
 	//struct timeval before, after;
 
-    //gettimeofday(&before, 0);
+	char buffer[SERVER_KEY_SIZE_LIMIT];
+	struct string key;
+
+	volatile struct server *info;
+
+	time_t now = time(0);
+
+	if (highavail_timeout)
+	{
+		key.data = buffer;
+		if (key_init(&key, entry) < 0) return -1;
+
+		info = dict_get(&servers, &key);
+
+		pthread_mutex_lock(&servers_mutex);
+		bool cancel = (((now - info->offline_last) < highavail_timeout) && (info->offline_count >= highavail_count));
+		pthread_mutex_unlock(&servers_mutex);
+		if (cancel)
+		{
+			printf("cancel %s:%d\n", entry->hostname, entry->port);
+			return -1;
+		}
+	}
+
+	//gettimeofday(&before, 0);
 	fd = mk_api->socket_connect(entry->hostname, entry->port);
 	//gettimeofday(&after, 0);
 
+	// If the connection succeeds, make sure server parameters indicate that it's available.
+	// Otherwise update server parameters to indicate the current state of the server.
 	if (fd >= 0)
 	{
+		if (highavail_timeout)
+		{
+			pthread_mutex_lock(&servers_mutex);
+			info->offline_count = 0;
+			info->offline_last = 0;
+			pthread_mutex_unlock(&servers_mutex);
+			printf("success %s:%d\n", entry->hostname, entry->port);
+		}
+
 		// TODO store response time and some more data (if necessary)
 		//unsigned response_time = (after.tv_sec - before.tv_sec) * 1000000 + after.tv_usec - before.tv_usec;
 
 		mk_api->socket_set_nonblocking(fd);
+	}
+	else if (highavail_timeout)
+	{
+		pthread_mutex_lock(&servers_mutex);
+		info->offline_count += 1;
+		info->offline_last = now;
+		printf("error %s:%d (%d,%ld)\n", entry->hostname, entry->port, info->offline_count, (long)now);
+		pthread_mutex_unlock(&servers_mutex);
 	}
 
 	return fd;
@@ -110,6 +162,8 @@ int proxy_balance_naive(const struct session_request *sr, const struct proxy_ser
 {
 	size_t index;
 	int fd;
+
+	(void)sr;
 
 	for(index = 0; index < server_list->length; ++index)
 	{
@@ -125,6 +179,8 @@ int proxy_balance_rr_lockless(const struct session_request *sr, const struct pro
 {
 	size_t index, from, to;
 	int fd = -1;
+
+	(void)sr;
 
 	for(from = next, to = from + server_list->length; from < to; ++from)
 	{
@@ -145,6 +201,8 @@ int proxy_balance_rr_locking(const struct session_request *sr, const struct prox
 {
 	size_t index, from, to;
 	int fd = -1;
+
+	(void)sr;
 
 	pthread_mutex_lock(&next_mutex);
 
@@ -169,15 +227,17 @@ int proxy_balance_leastconnections(const struct session_request *sr, const struc
 	int fd;
 
 	size_t index, index_min;
-	unsigned *count, *count_min;
+	struct server *info, *info_min;
 
 	char buffer[SERVER_KEY_SIZE_LIMIT];
 	struct string key;
 
+	(void)sr;
+
 	key.data = buffer;
 
 	if (key_init(&key, server_list->entry) < 0) return -2;
-	count_min = dict_get(&servers, &key);
+	info_min = dict_get(&servers, &key);
 	index_min = 0;
 
 	pthread_mutex_lock(&servers_mutex);
@@ -185,16 +245,16 @@ int proxy_balance_leastconnections(const struct session_request *sr, const struc
 	for(index = 1; index < server_list->length; ++index)
 	{
 		if (key_init(&key, server_list->entry + index) < 0) return -2;
-		count = dict_get(&servers, &key);
-		if (*count < *count_min)
+		info = dict_get(&servers, &key);
+		if (info->connections < info_min->connections)
 		{
-			count_min = count;
+			info_min = info;
 			index_min = index;
 		}
 	}
 
 	fd = balance_connect(server_list->entry + index_min);
-	if (fd >= 0) *count_min += 1;
+	if (fd >= 0) info_min->connections += 1;
 
 	pthread_mutex_unlock(&servers_mutex);
 
@@ -206,55 +266,19 @@ int proxy_balance_leastconnections(const struct session_request *sr, const struc
 
 void proxy_balance_close(void *connection)
 {
-	unsigned *count = dict_get(&servers, connection);
+	struct server *info = dict_get(&servers, connection);
 
 	pthread_mutex_lock(&servers_mutex);
-	*count -= 1;
+	info->connections -= 1;
 	pthread_mutex_unlock(&servers_mutex);
 
 	free(connection);
 }
-
-//
-//Weighted Round Robin
-// WRR will act exactly like round robin, because of the same weights of the connections.
-// This way the implementation will be simple and fast.
-// For example if we have 2 hosts host1 with weight 3 and host2 with weight 1
-// I will make an array with 4 pointers 3 to host 1 and 1 to host2
-// By making RR on the array, host1 will be invoked 3 times more
-//
-/*int proxy_balance_rr_weighted(const struct session_request *sr, const struct proxy_server_entry_array *server_list)
-{
-	pthread_mutex_lock(&next_mutex);
-	size_t from = next_shared + 1, to = from + server_list->length;
-	const struct proxy_server_entry *server;
-	int fd;
-
-	// assert(server_list->length);
-	do
-	{
-		pthread_mutex_unlock(&next_mutex);
-		server = server_list->entry + (from % server_list->length);
-		fd = mk_api->socket_connect(server->hostname, server->port);
-		if (fd >= 0)
-		{
-			next_shared = from;
-			mk_api->socket_set_nonblocking(fd);
-			return fd;
-		}
-		pthread_mutex_lock(&next_mutex);
-	} while (++from < to);
-
-	pthread_mutex_unlock(&next_mutex);
-	return -1;
-}
-*/
 
 /*
 char *server_list[] = {"host1","host2","host3"}
 char *test_balance(...)
 {
 return [pr_loadbalance_sport_based(...)];
-
 }
 */

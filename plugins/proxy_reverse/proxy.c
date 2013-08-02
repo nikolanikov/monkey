@@ -103,6 +103,8 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
 		return proxy_balance_rr_locking(sr, match->server_list);
 	case LeastConnections:
 		return proxy_balance_leastconnections(sr, match->server_list, &peer->connection);
+	default:
+		return -1;
 	}
 }
 
@@ -191,8 +193,8 @@ void _mkp_core_thctx(void)
 		abort();
 	}
 
-	if (!dict_init(&context->client, 4)) ; // TODO
-	if (!dict_init(&context->slave, 4)) ; // TODO
+	if (!dict_init(&context->client, 4)) return;
+	if (!dict_init(&context->slave, 4)) return;
 
 	pthread_setspecific(proxy_key, context);
 }

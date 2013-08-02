@@ -80,7 +80,7 @@ int dict_set(struct dict *dict, const struct string *key, void *value, void **re
 
 	// Look for the requested key among the items with the corresponding hash
 	// Compare only keys with the same length
-	for(items = ITEMS_SLOT(dict, key->data, key->length); item = *items; items = &(*items)->_next)
+	for(items = ITEMS_SLOT(dict, key->data, key->length); (item = *items); items = &(*items)->_next)
 		if ((key->length == item->key_size) && !memcmp(key->data, item->key_data, item->key_size))
 		{
 			// Overwrite value if specified. Otherwise return error.
@@ -134,7 +134,7 @@ void *dict_remove(struct dict *dict, const struct string *key)
 
 	// Look for the requested key among the items with the corresponding hash
 	// Compare only keys with the same length
-	for(items = ITEMS_SLOT(dict, key->data, key->length); item = *items; items = &(*items)->_next)
+	for(items = ITEMS_SLOT(dict, key->data, key->length); (item = *items); items = &(*items)->_next)
 		if ((key->length == item->key_size) && !memcmp(key->data, item->key_data, item->key_size))
 		{
 			// This is the item we are looking for

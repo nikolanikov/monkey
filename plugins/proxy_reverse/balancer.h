@@ -18,4 +18,6 @@ int proxy_balance_rr_locking(const struct session_request *sr, const struct prox
 // Connects to the server with the least number of connections. Ensures equal load in most use cases but adds significant overhead.
 int proxy_balance_leastconnections(const struct session_request *sr, const struct proxy_server_entry_array *server_list, void **connection);
 
+int proxy_balance_init(const struct proxy_entry_array *config);
+
 void proxy_balance_close(void *connection);

@@ -3,34 +3,15 @@
 enum balancer_type
 {
 	Naive = 1,
-	FirstAlive = 2,
-	RoundRobin = 3,
-	LockingRoundRobin = 4,
-	LeastConnections = 5,
+	FirstAlive,
+	RoundRobin,
+	LockingRoundRobin,
+	LeastConnections,
 	/*Hash=1,
 	FirstAlive,
 	RoundRobin,
 	WRoundRobin*/
 };
-
-/*
-struct balancer
-{
-	enum balancer_type type;
-	union
-	{
-		struct hash
-		{
-			// ...
-		} hash;
-		struct first_alive
-		{
-			// ...
-		} first_alive;
-		//...
-	} params;
-};
-*/
 
 struct proxy_server_entry
 {
@@ -52,6 +33,8 @@ struct match_regex_array
 
 struct proxy_cnf_default_values
 {
+	int count;
+	int timeout;
 	struct proxy_server_entry_array *server_list;
 	enum balancer_type balancer_type;
 };
@@ -61,6 +44,8 @@ struct proxy_entry
 	struct proxy_server_entry_array *server_list;
 	enum balancer_type balancer_type;
 	struct match_regex_array *regex_array;
+	int count;
+	int timeout;
 };
 
 struct proxy_entry_array
