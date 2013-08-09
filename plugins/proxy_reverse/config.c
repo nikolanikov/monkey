@@ -142,6 +142,9 @@ static void proxy_config_read_defaults(struct proxy_cnf_default_values *default_
 		case 'R':
 			default_values->balancer_type = RoundRobin;
 			break;
+		case 'S':
+			default_values->balancer_type = SourceHash;
+			break;
 		case 'L':
 			if (load_balancer[1] == 'o') default_values->balancer_type = LockingRoundRobin;
 			else if (load_balancer[1] == 'e') default_values->balancer_type = LeastConnections;

@@ -1,8 +1,12 @@
-#include <stdint.h>
 #include <regex.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/socket.h>
 
 #include "types.h"
 #include "config.h"
+
+#define SERVER_KEY_SIZE_LIMIT (127 + 1 + 5)		/* domain:port */
 
 static unsigned next = 0;
 
@@ -15,10 +19,12 @@ static pthread_mutex_t servers_mutex = PTHREAD_MUTEX_INITIALIZER;
 static unsigned highavail_count;
 static time_t highavail_timeout;
 
+/*client = time(0) % server_list->length;*/
+
 struct server
 {
 	unsigned connections;
-	//unsigned response_time; // response time in microseconds
+	/*unsigned response_time;*/ /* response time in microseconds */
 	unsigned offline_count;
 	time_t offline_last;
 };
@@ -37,13 +43,11 @@ static uint16_t format_uint_length(uint64_t number)
 	return length;
 }
 
-#define SERVER_KEY_SIZE_LIMIT (127 + 1 + 5)		/* domain:port */
-
 static int key_init(struct string *key, const struct proxy_server_entry *entry)
 {
 	size_t length = format_uint_length(entry->port);
 	key->length = strlen(entry->hostname);
-	if ((key->length + 1 + length) > SERVER_KEY_SIZE_LIMIT) return -1; // invalid server entry
+	if ((key->length + 1 + length) > SERVER_KEY_SIZE_LIMIT) return -1; /* invalid server entry */
 
 	memcpy(key->data, entry->hostname, key->length);
 	key->data[key->length++] = ':';
@@ -68,7 +72,7 @@ int proxy_balance_init(const struct proxy_entry_array *config)
 	highavail_count = config->entry[0].count;
 	highavail_timeout = config->entry[0].timeout;
 
-	// Add entry for each slave server in the servers dictionary.
+	/* Add entry for each slave server in the servers dictionary. */
 	for(i = 0; i < config->length; i++)
 	{
 		for(j = 0; j < config->entry[i].server_list->length; j++)
@@ -76,18 +80,20 @@ int proxy_balance_init(const struct proxy_entry_array *config)
 			if (key_init(&key, config->entry[i].server_list->entry + j) < 0) return -2;
 
 			value = malloc(sizeof(struct server));
-			if (!value) return ERROR_MEMORY; // memory error
+			if (!value) return ERROR_MEMORY; /* memory error */
 			value->connections = 0;
 			value->offline_count = 0;
 			value->offline_last = 0;
 
-			status = dict_add(&servers, &key, value); // dict_add will auto reject all repeated entries
+			status = dict_add(&servers, &key, value); /* dict_add will auto reject all repeated entries */
 			if (status == ERROR_MEMORY) return ERROR_MEMORY;
 		}
 	}
 
-	// From here on, the only allowed modification of servers is to change the value of an item.
-	// This allows certain performance optimizations to be done.
+	/*
+	From here on, the only allowed modification of servers is to change the value of an item.
+	This allows certain performance optimizations to be done.
+	*/
 
 	return 0;
 }
@@ -95,7 +101,7 @@ int proxy_balance_init(const struct proxy_entry_array *config)
 static int balance_connect(const struct proxy_server_entry *entry)
 {
 	int fd;
-	//struct timeval before, after;
+	/*struct timeval before, after;*/
 
 	char buffer[SERVER_KEY_SIZE_LIMIT];
 	struct string key;
@@ -114,19 +120,17 @@ static int balance_connect(const struct proxy_server_entry *entry)
 		pthread_mutex_lock(&servers_mutex);
 		bool cancel = (((now - info->offline_last) < highavail_timeout) && (info->offline_count >= highavail_count));
 		pthread_mutex_unlock(&servers_mutex);
-		if (cancel)
-		{
-			printf("cancel %s:%d\n", entry->hostname, entry->port);
-			return -1;
-		}
+		if (cancel) return -1;
 	}
 
-	//gettimeofday(&before, 0);
+	/*gettimeofday(&before, 0);*/
 	fd = mk_api->socket_connect(entry->hostname, entry->port);
-	//gettimeofday(&after, 0);
+	/*gettimeofday(&after, 0);*/
 
-	// If the connection succeeds, make sure server parameters indicate that it's available.
-	// Otherwise update server parameters to indicate the current state of the server.
+	/*
+	If the connection succeeds, make sure server parameters indicate that it's available.
+	Otherwise update server parameters to indicate the current state of the server.
+	*/
 	if (fd >= 0)
 	{
 		if (highavail_timeout)
@@ -135,11 +139,10 @@ static int balance_connect(const struct proxy_server_entry *entry)
 			info->offline_count = 0;
 			info->offline_last = 0;
 			pthread_mutex_unlock(&servers_mutex);
-			printf("success %s:%d\n", entry->hostname, entry->port);
 		}
 
-		// TODO store response time and some more data (if necessary)
-		//unsigned response_time = (after.tv_sec - before.tv_sec) * 1000000 + after.tv_usec - before.tv_usec;
+		/* TODO store response time and some more data (if necessary)
+		//unsigned response_time = (after.tv_sec - before.tv_sec) * 1000000 + after.tv_usec - before.tv_usec;*/
 
 		mk_api->socket_set_nonblocking(fd);
 	}
@@ -148,22 +151,17 @@ static int balance_connect(const struct proxy_server_entry *entry)
 		pthread_mutex_lock(&servers_mutex);
 		info->offline_count += 1;
 		info->offline_last = now;
-		printf("error %s:%d (%d,%ld)\n", entry->hostname, entry->port, info->offline_count, (long)now);
 		pthread_mutex_unlock(&servers_mutex);
 	}
 
 	return fd;
 }
 
-//client = time(0) % server_list->length;
-
-// Simple, non-fair load balancer with almost no overhead.
-int proxy_balance_naive(const struct session_request *sr, const struct proxy_server_entry_array *server_list, unsigned seed)
+/* Simple, non-fair load balancer with almost no overhead. */
+int proxy_balance_naive(const struct proxy_server_entry_array *server_list, unsigned seed)
 {
 	size_t index;
 	int fd;
-
-	(void)sr;
 
 	for(index = 0; index < server_list->length; ++index)
 	{
@@ -174,13 +172,37 @@ int proxy_balance_naive(const struct session_request *sr, const struct proxy_ser
 	return -1;
 }
 
-// Simple load balancer with almost no overhead. Race conditions are possible under heavy load, but they will just lead to unfair sharing of the load.
-int proxy_balance_rr_lockless(const struct session_request *sr, const struct proxy_server_entry_array *server_list)
+/* Simple, fast load balancer based on request IP address. Non-fair balancing is possible in special circumstances. */
+int proxy_balance_hash(const struct proxy_server_entry_array *server_list, int sock)
+{
+	struct sockaddr_storage source;
+	socklen_t length;
+	in_addr_t address;
+	char *p = (char *)&address;
+
+	/* Retrieve socket source address struct and extract the source IP address from it. */
+	length = sizeof(source);
+	if (getpeername(sock, (struct sockaddr *)&source, &length) < 0) return -1;
+	switch (source.ss_family)
+	{
+	case AF_INET:
+		memcpy(p, (unsigned char *)&((struct sockaddr_in *)&source)->sin_addr, sizeof(in_addr_t)); /* we can do this because in_addr_t is stored in big endian */
+		break;
+	case AF_INET6:
+		memcpy(p, ((struct sockaddr_in6 *)&source)->sin6_addr.s6_addr + 12, sizeof(in_addr_t)); /* the last 32 bits will suffice for calculating the hash */
+		break;
+	default:
+		return -1; /* invalid address */
+	}
+
+	return balance_connect(server_list->entry + (address % server_list->length));
+}
+
+/* Simple load balancer with almost no overhead. Race conditions are possible under heavy load, but they will just lead to unfair sharing of the load. */
+int proxy_balance_rr_lockless(const struct proxy_server_entry_array *server_list)
 {
 	size_t index, from, to;
 	int fd = -1;
-
-	(void)sr;
 
 	for(from = next, to = from + server_list->length; from < to; ++from)
 	{
@@ -188,7 +210,7 @@ int proxy_balance_rr_lockless(const struct session_request *sr, const struct pro
 		fd = balance_connect(server_list->entry + index);
 		if (fd >= 0)
 		{
-			next = index + 1; // remember which server handled the request
+			next = index + 1; /* remember which server handled the request */
 			break;
 		}
 	}
@@ -196,13 +218,11 @@ int proxy_balance_rr_lockless(const struct session_request *sr, const struct pro
 	return fd;
 }
 
-// Simple load balancer. Race conditions are prevented with mutexes. This adds significant overhead under heavy load.
-int proxy_balance_rr_locking(const struct session_request *sr, const struct proxy_server_entry_array *server_list)
+/* Simple load balancer. Race conditions are prevented with mutexes. This adds significant overhead under heavy load. */
+int proxy_balance_rr_locking(const struct proxy_server_entry_array *server_list)
 {
 	size_t index, from, to;
 	int fd = -1;
-
-	(void)sr;
 
 	pthread_mutex_lock(&next_mutex);
 
@@ -212,7 +232,7 @@ int proxy_balance_rr_locking(const struct session_request *sr, const struct prox
 		fd = balance_connect(server_list->entry + index);
 		if (fd >= 0)
 		{
-			next_shared = index + 1; // remember which server handled the request
+			next_shared = index + 1; /* remember which server handled the request */
 			break;
 		}
 	}
@@ -221,8 +241,8 @@ int proxy_balance_rr_locking(const struct session_request *sr, const struct prox
 	return fd;
 }
 
-// Ensures equal load in most use cases. All servers are traversed to find the one with least connections. This adds significant overhead.
-int proxy_balance_leastconnections(const struct session_request *sr, const struct proxy_server_entry_array *server_list, void **connection)
+/* Ensures equal load in most use cases. All servers are traversed to find the one with least connections. This adds significant overhead. */
+int proxy_balance_leastconnections(const struct proxy_server_entry_array *server_list, void **connection)
 {
 	int fd;
 
@@ -231,8 +251,6 @@ int proxy_balance_leastconnections(const struct session_request *sr, const struc
 
 	char buffer[SERVER_KEY_SIZE_LIMIT];
 	struct string key;
-
-	(void)sr;
 
 	key.data = buffer;
 
@@ -274,11 +292,3 @@ void proxy_balance_close(void *connection)
 
 	free(connection);
 }
-
-/*
-char *server_list[] = {"host1","host2","host3"}
-char *test_balance(...)
-{
-return [pr_loadbalance_sport_based(...)];
-}
-*/

@@ -25,6 +25,10 @@ Least connections
 	Connects to the server with the least number of connections. Ensures equal load in most use cases but adds significant overhead.
 
 Weighted Round Robin can be done by entering the same server several times in the Round Robin blancer section. Example:
+
+SourceHash
+	Gets the source address as a hash, mainly usable for sessions and etc.
+
 [PROXY_ENTRY]
     ServerList 127.0.0.1:80 127.0.0.1:81 127.0.0.1:80 127.0.0.1:82 127.0.0.1:80 127.0.0.1:81
     LoadBalancer RoundRobin

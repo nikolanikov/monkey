@@ -1,3 +1,4 @@
 Proxy reverse
 ===
-TODO
+Enables using monkey as a reverse proxy server.
+Each arriving request is handled by a slave server.

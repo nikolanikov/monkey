@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-// Items in dict with keys that hash to the same value as key
+/* Items in dict with keys that hash to the same value as key. */
 #define ITEMS_SLOT(dict, data, length) ((dict)->items + (hash((data), (length)) & ((dict)->size - 1)))
 
 // TODO: check this sdbm hash algorithm
@@ -43,7 +43,7 @@ static uint32_t hash(const char *string, size_t size)
 	return true;
 }*/
 
-// Initializes dictionary iterator
+/* Initializes dictionary iterator. */
 const struct dict_item *dict_first(struct dict_iterator *it, const struct dict *d)
 {
 	for(it->index = 0; it->index < d->size; ++it->index)
@@ -54,7 +54,7 @@ const struct dict_item *dict_first(struct dict_iterator *it, const struct dict *
 
 const struct dict_item *dict_next(struct dict_iterator *it, const struct dict *d)
 {
-	// If there are more items in the curren slot, return the next one. Update the iterator.
+	/* If there are more items in the curren slot, return the next one. Update the iterator. */
 	if (it->item->_next) return it->item = it->item->_next;
 
 	for(it->index += 1; it->index < d->size; ++it->index)
@@ -78,12 +78,11 @@ int dict_set(struct dict *dict, const struct string *key, void *value, void **re
 {
 	struct dict_item **items, *item;
 
-	// Look for the requested key among the items with the corresponding hash
-	// Compare only keys with the same length
+	/* Look for the requested key among the items with the corresponding hash. Compare only keys with the same length. */
 	for(items = ITEMS_SLOT(dict, key->data, key->length); (item = *items); items = &(*items)->_next)
 		if ((key->length == item->key_size) && !memcmp(key->data, item->key_data, item->key_size))
 		{
-			// Overwrite value if specified. Otherwise return error.
+			/* Overwrite value if specified. Otherwise return error. */
 			if (result)
 			{
 				*result = item->value;
@@ -93,7 +92,7 @@ int dict_set(struct dict *dict, const struct string *key, void *value, void **re
 			else return ERROR_EXIST;
 		}
 
-	// Allocate a single memory slot for dict_item and key data.
+	/* Allocate a single memory slot for dict_item and key data. */
 	struct /* same as struct dict_item except key is not const */
 	{
         size_t key_size;
@@ -103,7 +102,7 @@ int dict_set(struct dict *dict, const struct string *key, void *value, void **re
 	} *slot = malloc(sizeof(struct dict_item) + sizeof(char) * (key->length + 1));
 	if (!slot) return ERROR_MEMORY;
 
-	// Initialize the allocated memory.
+	/* Initialize the allocated memory. */
 	slot->key_size = key->length;
 	slot->key_data = (char *)(slot + 1);
 	memcpy(slot->key_data, key->data, key->length);
@@ -111,7 +110,7 @@ int dict_set(struct dict *dict, const struct string *key, void *value, void **re
 	slot->value = value;
 	slot->_next = 0;
 
-	// Add the item to the dictionary.
+	/* Add the item to the dictionary. */
 	*items = (struct dict_item *)slot;
 	dict->count += 1;
 	return 0;
@@ -119,12 +118,11 @@ int dict_set(struct dict *dict, const struct string *key, void *value, void **re
 
 void *dict_get(const struct dict *dict, const struct string *key)
 {
-	// Look for the requested key among the items with the corresponding hash
-	// Compare only keys with the same length
+	/* Look for the requested key among the items with the corresponding hash. Compare only keys with the same length. */
 	struct dict_item *item;
 	for(item = *ITEMS_SLOT(dict, key->data, key->length); item; item = item->_next)
 		if ((key->length == item->key_size) && !memcmp(key->data, item->key_data, item->key_size))
-			return item->value; // This is the item we are looking for
+			return item->value; /* This is the item we are looking for. */
 	return 0;
 }
 
@@ -132,12 +130,11 @@ void *dict_remove(struct dict *dict, const struct string *key)
 {
 	struct dict_item **items, *item;
 
-	// Look for the requested key among the items with the corresponding hash
-	// Compare only keys with the same length
+	/* Look for the requested key among the items with the corresponding hash. Compare only keys with the same length. */
 	for(items = ITEMS_SLOT(dict, key->data, key->length); (item = *items); items = &(*items)->_next)
 		if ((key->length == item->key_size) && !memcmp(key->data, item->key_data, item->key_size))
 		{
-			// This is the item we are looking for
+			/* This is the item we are looking for. */
 			void *value = item->value;
 			*items = item->_next;
 			free(item);
@@ -154,7 +151,7 @@ void dict_term(struct dict *dict)
 	struct dict_iterator it;
 	struct dict_item *prev = 0;
 
-	// Free each item in each slot of the dictionary
+	/* Free each item in each slot of the dictionary. */
 	for(it.index = 0; it.index < dict->size; ++it.index)
 		if (dict->items[it.index])
 		{

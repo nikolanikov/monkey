@@ -77,7 +77,7 @@ static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 	return true;
 }
 
-static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *proxy_config)
+static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *proxy_config, int sock)
 {
 	const struct session_request *sr = peer->sr;
 	char *string = malloc(sr->uri_processed.len + 1);
@@ -91,18 +91,21 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
 
 	peer->connection = 0;
 
+	/* Invoke the appropriate balancer based on the configuration */
 	switch (match->balancer_type)
 	{
 	case Naive:
-		return proxy_balance_naive(sr, match->server_list, time(0));
+		return proxy_balance_naive(match->server_list, time(0));
 	case FirstAlive:
-		return proxy_balance_firstalive(sr, match->server_list);
+		return proxy_balance_firstalive(match->server_list);
+	case SourceHash:
+		return proxy_balance_hash(match->server_list, sock);
 	case RoundRobin:
-		return proxy_balance_rr_lockless(sr, match->server_list);
+		return proxy_balance_rr_lockless(match->server_list);
 	case LockingRoundRobin:
-		return proxy_balance_rr_locking(sr, match->server_list);
+		return proxy_balance_rr_locking(match->server_list);
 	case LeastConnections:
-		return proxy_balance_leastconnections(sr, match->server_list, &peer->connection);
+		return proxy_balance_leastconnections(match->server_list, &peer->connection);
 	default:
 		return -1;
 	}
@@ -135,19 +138,20 @@ static int proxy_close(int fd)
 {
 	struct proxy_context *context = pthread_getspecific(proxy_key);
 
-	// TODO
-	//  close client socket with RST
-	//  for slave socket: mk_api->event_del(fd);
-	//  close slave socket with close
-	//  do something to the other socket
-	//  maybe closes should be performed externally and we need to return appropriate value here
+	/* TODO
+	close client socket with RST
+	for slave socket: mk_api->event_del(fd);
+	close slave socket with close
+	do something to the other socket
+	maybe closes should be performed externally and we need to return appropriate value here
+	*/
 
 	struct proxy_peer *peer = proxy_peer_remove(&context->slave, fd);
 	if (peer) proxy_peer_remove(&context->client, peer->fd_client);
 	else
 	{
 		peer = proxy_peer_remove(&context->client, fd);
-		if (!peer) return MK_PLUGIN_RET_EVENT_NEXT; // nothing to do
+		if (!peer) return MK_PLUGIN_RET_EVENT_NEXT; /* nothing to do */
 		proxy_peer_remove(&context->slave, peer->fd_slave);
 	}
 
@@ -213,6 +217,8 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 	struct proxy_peer *peer = proxy_peer_get(&context->client, cs->socket);
 	if (peer)
 	{
+		/* Non-first request on a keep-alive connection. */
+
 		fprintf(stderr, "RESTAGE\n");
 
 		peer->request_index = 0;
@@ -229,12 +235,14 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 	}
 	else
 	{
+		/* First request for this connection. */
+
 		peer = malloc(sizeof(struct proxy_peer));
 		if (!peer) return MK_PLUGIN_RET_CLOSE_CONX;
 
 		peer->sr = sr;
 		peer->fd_client = cs->socket;
-		peer->fd_slave = slave_connect(peer, proxy_config);
+		peer->fd_slave = slave_connect(peer, proxy_config, cs->socket);
 		if (peer->fd_slave < 0)
 		{
 			free(peer);
@@ -270,7 +278,7 @@ int _mkp_event_read(int socket)
 	peer = proxy_peer_get(&context->slave, socket);
 	if (peer)
 	{
-		// We can read from the slave server.
+		/* We can read from the slave server. */
 
 		fprintf(stderr, "  <- S\n");
 
@@ -285,7 +293,7 @@ int _mkp_event_read(int socket)
 		{
 			if (!response_buffer_adjust(peer, peer->response.size + 1))
 			{
-				// Don't poll for reading until we have free space in the buffer.
+				/* Don't poll for reading until we have free space in the buffer. */
 				//peer->mode_slave &= ~MK_EPOLL_READ;
 				//mk_api->event_socket_change_mode(peer->fd_slave, peer->mode_slave, MK_EPOLL_LEVEL_TRIGGERED);
 				//return MK_PLUGIN_RET_EVENT_OWNED;
@@ -304,7 +312,7 @@ int _mkp_event_read(int socket)
 	}
 	else
 	{
-		// We can read from a client.
+		/* We can read from a client. */
 
 		peer = proxy_peer_get(&context->client, socket);
 		if (peer)
@@ -326,7 +334,7 @@ int _mkp_event_write(int socket)
 	peer = proxy_peer_get(&context->client, socket);
 	if (peer)
 	{
-		// We can write to the client.
+		/* We can write to the client. */
 
 		fprintf(stderr, "C <-  \n");
 
@@ -359,11 +367,11 @@ int _mkp_event_write(int socket)
 		peer = proxy_peer_get(&context->slave, socket);
 		if (!peer) return MK_PLUGIN_RET_EVENT_NEXT;
 
-		// We can write to the slave server.
+		/* We can write to the slave server. */
 
 		fprintf(stderr, "  -> S\n");
 
-		// Make sure we poll for incoming data from the slave server.
+		/* Make sure we poll for incoming data from the slave server. */
 		/*if (!(peer->mode_slave & MK_EPOLL_READ))
 		{
 			peer->mode_slave |= MK_EPOLL_READ;

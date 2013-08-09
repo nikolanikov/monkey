@@ -4,6 +4,7 @@ enum balancer_type
 {
 	Naive = 1,
 	FirstAlive,
+	SourceHash,
 	RoundRobin,
 	LockingRoundRobin,
 	LeastConnections,
