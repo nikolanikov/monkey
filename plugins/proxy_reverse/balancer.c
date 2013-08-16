@@ -264,6 +264,7 @@ int proxy_balance_leastconnections(const struct proxy_server_entry_array *server
 	{
 		if (key_init(&key, server_list->entry + index) < 0) return -2;
 		info = dict_get(&servers, &key);
+
 		if (info->connections < info_min->connections)
 		{
 			info_min = info;

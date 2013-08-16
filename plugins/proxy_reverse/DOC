@@ -12,22 +12,23 @@ First-Alive
 	Simple, non-fair load balancer with almost no overhead.
 	Connects to the first alive server, starting from 0.
 
-Lockless Round Robin
+LocklessRoundRobin
 	Simple load balancer with almost no overhead. Race conditions are possible under heavy load, but they will just lead to unfair sharing of the load.
 	Each consecutive call connects to the next available server. Race conditions can occur since no locking is performed.
 
-Locking Round Robin
+LockingRoundRobin
 	Simple load balancer. Race conditions are prevented with mutexes. This adds significant overhead under heavy load.
 	Each consecutive call connects to the next available server. Race conditions are prevented at the expense of performance.
 
-Least connections
+LeastConnections
 	Ensures equal load in most use cases. All servers are traversed to find the one with least connections.
 	Connects to the server with the least number of connections. Ensures equal load in most use cases but adds significant overhead.
 
-Weighted Round Robin can be done by entering the same server several times in the Round Robin blancer section. Example:
-
 SourceHash
-	Gets the source address as a hash, mainly usable for sessions and etc.
+	Ensures that each consecutive request from a given client will be handled by the same server. This allows each slave server to work independently.
+	Simple, fast load balancer based on request IP address. Non-fair balancing is possible under special circumstances.
+
+Weighted Round Robin can be done by entering the same server several times in the Round Robin blancer section. Example:
 
 [PROXY_ENTRY]
     ServerList 127.0.0.1:80 127.0.0.1:81 127.0.0.1:80 127.0.0.1:82 127.0.0.1:80 127.0.0.1:81

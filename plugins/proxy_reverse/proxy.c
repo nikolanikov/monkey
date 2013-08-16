@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <regex.h>
+#include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -138,14 +139,6 @@ static int proxy_close(int fd)
 {
 	struct proxy_context *context = pthread_getspecific(proxy_key);
 
-	/* TODO
-	close client socket with RST
-	for slave socket: mk_api->event_del(fd);
-	close slave socket with close
-	do something to the other socket
-	maybe closes should be performed externally and we need to return appropriate value here
-	*/
-
 	struct proxy_peer *peer = proxy_peer_remove(&context->slave, fd);
 	if (peer) proxy_peer_remove(&context->client, peer->fd_client);
 	else
@@ -159,7 +152,15 @@ static int proxy_close(int fd)
 	mk_api->event_del(peer->fd_slave);
 
 	if (fd == peer->fd_client) mk_api->socket_close(peer->fd_slave);
-	else mk_api->socket_close(peer->fd_client);
+	else
+	{
+		/* avoid TIME_WAIT by sending RST to the client */
+		struct linger linger;
+		linger.l_onoff = 1;
+		linger.l_linger = 0;
+		setsockopt(peer->fd_client, SO_LINGER, &linger);
+		mk_api->socket_close(peer->fd_client);
+	}
 
 	slave_disconnect(peer);
 
@@ -255,7 +256,7 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 		peer->request_index = 0;
 
 		mk_api->event_socket_change_mode(peer->fd_client, peer->mode_client, MK_EPOLL_LEVEL_TRIGGERED);
-		mk_api->event_add(peer->fd_slave, peer->mode_slave, 0, MK_EPOLL_LEVEL_TRIGGERED); // TODO check third argument
+		mk_api->event_add(peer->fd_slave, peer->mode_slave, 0, MK_EPOLL_LEVEL_TRIGGERED);
 
 		peer->response.buffer = 0;
 		peer->response.size = 0;
@@ -263,8 +264,8 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 		peer->response.total = 0;
 		response_buffer_adjust(peer, RESPONSE_BUFFER_MIN);
 
-		if (proxy_peer_add(&context->client, cs->socket, peer)) ; // TODO
-		if (proxy_peer_add(&context->slave, peer->fd_slave, peer)) ; // TODO
+		if (proxy_peer_add(&context->client, cs->socket, peer)) return MK_PLUGIN_RET_CLOSE_CONX; // TODO
+		if (proxy_peer_add(&context->slave, peer->fd_slave, peer)) return MK_PLUGIN_RET_CLOSE_CONX; // TODO
 	}
 
 	return MK_PLUGIN_RET_CONTINUE;
