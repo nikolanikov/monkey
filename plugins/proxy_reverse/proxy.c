@@ -15,8 +15,6 @@ MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.1", MK_PLUGIN_STAGE_30 | MK_P
 
 #include <stdio.h>
 
-/* TODO fix comments to work with ANSI C */
-
 struct proxy_context
 {
 	struct dict client, slave;
@@ -55,7 +53,7 @@ static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 	if (!peer->response.size)
 	{
 		peer->response.buffer = malloc(size);
-		if (!peer) return false;
+		if (!peer) return 0;
 	}
 	else if (peer->response.size < size)
 	{
@@ -69,7 +67,7 @@ static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 		}
 
 		peer->response.buffer = realloc(peer->response.buffer, size);
-		if (!peer) return false;
+		if (!peer) return 0;
 	}
 	else return true;
 
@@ -158,7 +156,7 @@ static int proxy_close(int fd)
 		struct linger linger;
 		linger.l_onoff = 1;
 		linger.l_linger = 0;
-		setsockopt(peer->fd_client, SO_LINGER, &linger);
+		setsockopt(peer->fd_client, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 		mk_api->socket_close(peer->fd_client);
 	}
 
@@ -212,6 +210,8 @@ void _mkp_exit(void)
 int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct session_request *sr)
 {
 	struct proxy_context *context = pthread_getspecific(proxy_key);
+
+	(void)plugin;
 
 	fprintf(stderr, "30\n");
 
