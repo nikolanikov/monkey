@@ -1,4 +1,3 @@
-//IMPORTANT, not tested or compiled, just prototype
 #define _GNU_SOURCE
 
 #include <regex.h>
@@ -110,10 +109,10 @@ static void proxy_config_read_defaults(struct proxy_cnf_default_values *default_
 
 	load_balancer = mk_api->config_section_getval(section, "LoadBalancer", MK_CONFIG_VAL_STR);
 
-	default_values->count = (int)mk_api->config_section_getval(section, "AttemptsCount", MK_CONFIG_VAL_NUM);
+	default_values->count = (long)mk_api->config_section_getval(section, "AttemptsCount", MK_CONFIG_VAL_NUM);
 	if (default_values->count < 0) default_values->count = 0;
 
-	default_values->timeout = (int)mk_api->config_section_getval(section, "OfflineTimeOut", MK_CONFIG_VAL_NUM);
+	default_values->timeout = (long)mk_api->config_section_getval(section, "OfflineTimeOut", MK_CONFIG_VAL_NUM);
 	if (default_values->timeout < 0) default_values->timeout = 0;
 
 	if (load_balancer)
@@ -244,7 +243,7 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 				}
 			}
 
-			//TODO to handle LoadBalancer specific configs
+			
 
 			entry_num++;
 		}
@@ -261,7 +260,6 @@ error:
 struct proxy_entry_array *proxy_reverse_read_config(const char *path)
 {
 	struct proxy_cnf_default_values default_values;
-	//TODO to check the mallocs for errors
 	char *conf_path = NULL;
 	struct mk_config *config;
 	struct mk_config_section *section;

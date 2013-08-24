@@ -13,8 +13,6 @@
 
 MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.1", MK_PLUGIN_STAGE_30 | MK_PLUGIN_CORE_THCTX);
 
-#include <stdio.h>
-
 struct proxy_context
 {
 	struct dict client, slave;
@@ -35,13 +33,14 @@ struct proxy_peer
 		size_t size, index, total;
 	} response;
 	void *connection;
+	int code;
 };
 
 static int log;
 
 static struct proxy_entry_array *proxy_config;
 
-static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
+static int response_buffer_adjust(struct proxy_peer *peer, size_t size)
 {
 	/* Check buffer size and adjust it if necessary.
 	   RESPONSE_BUFFER_MIN <= size <= RESPONSE_BUFFER_MAX
@@ -69,11 +68,11 @@ static bool response_buffer_adjust(struct proxy_peer *peer, size_t size)
 		peer->response.buffer = realloc(peer->response.buffer, size);
 		if (!peer) return 0;
 	}
-	else return true;
+	else return 1;
 
 	peer->response.size = size;
 
-	return true;
+	return 1;
 }
 
 static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *proxy_config, int sock)
@@ -133,38 +132,54 @@ static struct proxy_peer *proxy_peer_remove(struct dict *dict, int fd)
 	return dict_remove(dict, &key);
 }
 
+#include <stdio.h>
 static int proxy_close(int fd)
 {
 	struct proxy_context *context = pthread_getspecific(proxy_key);
 
 	struct proxy_peer *peer = proxy_peer_remove(&context->slave, fd);
-	if (peer) proxy_peer_remove(&context->client, peer->fd_client);
-	else
+	if (!peer) /*proxy_peer_remove(&context->client, peer->fd_client);
+	else*/
 	{
 		peer = proxy_peer_remove(&context->client, fd);
 		if (!peer) return MK_PLUGIN_RET_EVENT_NEXT; /* nothing to do */
-		proxy_peer_remove(&context->slave, peer->fd_slave);
+		//proxy_peer_remove(&context->slave, peer->fd_slave);
 	}
 
-	mk_api->event_del(peer->fd_client);
-	mk_api->event_del(peer->fd_slave);
+	printf("close: %d (%d,%d)\n", fd, peer->fd_client, peer->fd_slave);
 
-	if (fd == peer->fd_client) mk_api->socket_close(peer->fd_slave);
+	slave_disconnect(peer);
+
+	if (fd == peer->fd_client)
+	{
+		if (peer->fd_slave >= 0)
+		{
+			proxy_peer_remove(&context->slave, peer->fd_slave);
+			mk_api->event_del(peer->fd_slave);
+			mk_api->socket_close(peer->fd_slave);
+		}
+	}
 	else
 	{
-		/* avoid TIME_WAIT by sending RST to the client */
+		proxy_peer_remove(&context->slave, peer->fd_slave);
+
+		peer->fd_slave = -1;
+		//return MK_PLUGIN_RET_EVENT_OWNED;
+		return MK_PLUGIN_RET_EVENT_CLOSE;
+	}
+	/*{
+		/ * avoid TIME_WAIT by sending RST to the client * /
 		struct linger linger;
 		linger.l_onoff = 1;
 		linger.l_linger = 0;
-		setsockopt(peer->fd_client, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
+		//setsockopt(peer->fd_client, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 		mk_api->socket_close(peer->fd_client);
-	}
-
-	slave_disconnect(peer);
+	}*/
 
 	free(peer->response.buffer);
 	free(peer);
 
+	//return MK_PLUGIN_RET_EVENT_OWNED;
 	return MK_PLUGIN_RET_EVENT_CLOSE;
 }
 
@@ -213,14 +228,16 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 
 	(void)plugin;
 
-	fprintf(stderr, "30\n");
+	write(2, "30\n", 3);
+	printf("socket: %d\n", cs->socket);
 
 	struct proxy_peer *peer = proxy_peer_get(&context->client, cs->socket);
 	if (peer)
 	{
 		/* Non-first request on a keep-alive connection. */
 
-		fprintf(stderr, "RESTAGE\n");
+		write(2, "RESTAGE\n", 8);
+		sleep(1);
 
 		peer->request_index = 0;
 
@@ -281,7 +298,7 @@ int _mkp_event_read(int socket)
 	{
 		/* We can read from the slave server. */
 
-		fprintf(stderr, "  <- S\n");
+		write(2, "  <- S\n", 7);
 
 		/*if (!peer->response.total)
 		{
@@ -307,6 +324,10 @@ int _mkp_event_read(int socket)
 		if (size <= 0) return proxy_close(peer->fd_slave);
 		peer->response.total += size;
 
+		// Set response code.
+		if ((!peer->sr->headers.status) && (peer->response.total >= 12))
+			mk_api->header_set_http_status(peer->sr, strtol(peer->response.buffer + 9, 0, 10));
+
 		mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_WRITE, MK_EPOLL_LEVEL_TRIGGERED);
 
 		return MK_PLUGIN_RET_EVENT_OWNED;
@@ -318,7 +339,7 @@ int _mkp_event_read(int socket)
 		peer = proxy_peer_get(&context->client, socket);
 		if (peer)
 		{
-			fprintf(stderr, "C ->  \n");
+			write(2, "C ->  \n", 7);
 			mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_RW, MK_EPOLL_LEVEL_TRIGGERED);
 			return MK_PLUGIN_RET_EVENT_NEXT;
 		}
@@ -337,7 +358,7 @@ int _mkp_event_write(int socket)
 	{
 		/* We can write to the client. */
 
-		fprintf(stderr, "C <-  \n");
+		write(2, "C <-  \n", 7);
 
 		/* Write response to the client. Don't poll for writing if we don't have anything to write. */
 		if (peer->response.index < peer->response.total)
@@ -355,7 +376,7 @@ int _mkp_event_write(int socket)
 			return MK_PLUGIN_RET_EVENT_OWNED;
 		}
 
-		fprintf(stderr, "C <X  \n");
+		write(2, "C <X  \n", 7);
 		mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_READ, MK_EPOLL_LEVEL_TRIGGERED);
 
 		return MK_PLUGIN_RET_EVENT_CONTINUE;
@@ -370,7 +391,7 @@ int _mkp_event_write(int socket)
 
 		/* We can write to the slave server. */
 
-		fprintf(stderr, "  -> S\n");
+		write(2, "  -> S\n", 7);
 
 		/* Make sure we poll for incoming data from the slave server. */
 		/*if (!(peer->mode_slave & MK_EPOLL_READ))
@@ -408,12 +429,12 @@ int _mkp_event_write(int socket)
 
 int _mkp_event_close(int fd)
 {
-	fprintf(stderr, "CLOSE\n");
+	write(2, "CLOSE\n", 6);
 	return proxy_close(fd);
 }
 
 int _mkp_event_error(int fd)
 {
-	fprintf(stderr, "ERROR\n");
+	write(2, "CLOSE\n", 6);
 	return proxy_close(fd);
 }

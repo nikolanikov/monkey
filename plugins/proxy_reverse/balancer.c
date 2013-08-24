@@ -19,12 +19,9 @@ static pthread_mutex_t servers_mutex = PTHREAD_MUTEX_INITIALIZER;
 static unsigned highavail_count;
 static time_t highavail_timeout;
 
-/*client = time(0) % server_list->length;*/
-
 struct server
 {
 	unsigned connections;
-	/*unsigned response_time;*/ /* response time in microseconds */
 	unsigned offline_count;
 	time_t offline_last;
 };
@@ -101,7 +98,6 @@ int proxy_balance_init(const struct proxy_entry_array *config)
 static int balance_connect(const struct proxy_server_entry *entry)
 {
 	int fd;
-	/*struct timeval before, after;*/
 
 	char buffer[SERVER_KEY_SIZE_LIMIT];
 	struct string key;
@@ -123,14 +119,11 @@ static int balance_connect(const struct proxy_server_entry *entry)
 		if (cancel) return -1;
 	}
 
-	/*gettimeofday(&before, 0);*/
-	fd = mk_api->socket_connect(entry->hostname, entry->port);
-	/*gettimeofday(&after, 0);*/
-
 	/*
-	If the connection succeeds, make sure server parameters indicate that it's available.
+	Try to connect. If the connection succeeds, make sure server parameters indicate that it's available.
 	Otherwise update server parameters to indicate the current state of the server.
 	*/
+	fd = mk_api->socket_connect(entry->hostname, entry->port);
 	if (fd >= 0)
 	{
 		if (highavail_timeout)
@@ -140,9 +133,6 @@ static int balance_connect(const struct proxy_server_entry *entry)
 			info->offline_last = 0;
 			pthread_mutex_unlock(&servers_mutex);
 		}
-
-		/* TODO store response time and some more data (if necessary)
-		//unsigned response_time = (after.tv_sec - before.tv_sec) * 1000000 + after.tv_usec - before.tv_usec;*/
 
 		mk_api->socket_set_nonblocking(fd);
 	}
@@ -260,6 +250,7 @@ int proxy_balance_leastconnections(const struct proxy_server_entry_array *server
 
 	pthread_mutex_lock(&servers_mutex);
 
+	/* Find the slave server with the least number of connections. */
 	for(index = 1; index < server_list->length; ++index)
 	{
 		if (key_init(&key, server_list->entry + index) < 0) return -2;
