@@ -307,6 +307,10 @@ struct server
 };
 */
 
+(void)buffer;
+(void)tmpval;
+(void)value;
+
 if(!stats_url.data)return 0;
 if(sr->uri_processed.len != stats_url.length)return 0;
 if(memcmp(sr->uri_processed.data,stats_url.data,stats_url.length))return 0;
@@ -323,7 +327,7 @@ html = malloc( sizeof(struct string) );
 
 for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
     {
-        length += item->key.length + sizeof("<br><b></b><br>") - 1 + sizeof("Connections:<br>") - 1 + 10 + sizeof("Offline Count:<br>") - 1 + 10 + sizeof("Offline Last Check:<br>") - 1 + 10 + 1 ;
+        length += item->key_size + sizeof("<br><b></b><br>") - 1 + sizeof("Connections:<br>") - 1 + 10 + sizeof("Offline Count:<br>") - 1 + 10 + sizeof("Offline Last Check:<br>") - 1 + 10 + 1 ;
     }
 
 	
@@ -338,8 +342,8 @@ for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
 		
 		memcpy(html->data + index,"<br><b>",sizeof("<br><b>") - 1);
 		index  += sizeof("<br><b>") - 1;
-		memcpy(html->data + index,item->key.data,item->key.length);
-		index  += item->key.length;
+		memcpy(html->data + index,item->key_data, item->key_size);
+		index  += item->key_size;
 		memcpy(html->data + index,"</b><br>",sizeof("</b><br>") - 1);
 		index  += sizeof("</b><br>") - 1;
 		
