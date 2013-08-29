@@ -18,6 +18,7 @@ static pthread_mutex_t servers_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static unsigned highavail_count;
 static time_t highavail_timeout;
+static struct string stats_url;
 
 struct server
 {
@@ -68,7 +69,9 @@ int proxy_balance_init(const struct proxy_entry_array *config)
 
 	highavail_count = config->entry[0].count;
 	highavail_timeout = config->entry[0].timeout;
-
+	stats_url.data = config->entry[0].stats_url;
+	stats_url.length = strlen(stats_url.data);
+	
 	/* Add entry for each slave server in the servers dictionary. */
 	for(i = 0; i < config->length; i++)
 	{
@@ -283,4 +286,94 @@ void proxy_balance_close(void *connection)
 	pthread_mutex_unlock(&servers_mutex);
 
 	free(connection);
+}
+
+struct string *proxy_balance_generate_statistics(struct session_request *sr)
+{
+size_t length=39;
+struct dict_iterator it;
+const struct dict_item *item;
+struct server *value;
+unsigned tmpval=0;
+unsigned index=0; 
+char buffer[10];
+struct string *html;
+/*
+struct server
+{
+	unsigned connections;
+	unsigned offline_count;
+	time_t offline_last;
+};
+*/
+
+if(!stats_url.data)return 0;
+if(sr->uri_processed.len != stats_url.length)return 0;
+if(memcmp(sr->uri_processed.data,stats_url.data,stats_url.length))return 0;
+
+//Allocating maximal necessary memory
+/*Template:
+Static part: <html><head></head><body></body></html> Length:39
+Dynamic part: <br><b>hostname1:port1</b><br>Connections:num<br>Offline Count:num<br>Offline Last Check:num<br>
+TODO: for each number we allocate 10 bytes of memory, because without using locking, the numbers may change during the length calculation and to make SEGFAULT
+*/
+
+html = malloc( sizeof(struct string) );
+//Calculating the length
+
+for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
+    {
+        length += item->key.length + sizeof("<br><b></b><br>") - 1 + sizeof("Connections:<br>") - 1 + 10 + sizeof("Offline Count:<br>") - 1 + 10 + sizeof("Offline Last Check:<br>") - 1 + 10 + 1 ;
+    }
+
+	
+html->data = malloc(length * sizeof(char));
+
+memcpy(html->data,"<html><head></head><body>",sizeof("<html><head></head><body>") - 1);
+index += sizeof("<html><head></head><body>") - 1;
+
+for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
+    {
+        value = item->value;
+		
+		memcpy(html->data + index,"<br><b>",sizeof("<br><b>") - 1);
+		index  += sizeof("<br><b>") - 1;
+		memcpy(html->data + index,item->key.data,item->key.length);
+		index  += item->key.length;
+		memcpy(html->data + index,"</b><br>",sizeof("</b><br>") - 1);
+		index  += sizeof("</b><br>") - 1;
+		
+		memcpy(html->data + index,"Connections:",sizeof("Connections:") - 1);
+		index  += sizeof("Connections:") - 1;
+		tmpval=item->value->connections;
+		memcpy(html->data + index,format_uint(buffer,tmpval,10),format_uint_length(tmpval));
+		index  +=format_uint_length(tmpval);
+		memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
+		index  += sizeof("<br>") - 1;
+		
+		memcpy(html->data + index,"Offline Count:",sizeof("Offline Count:") - 1);
+		index  += sizeof("Offline Count:") - 1;
+		tmpval=item->value->offline_count;
+		memcpy(html->data + index,format_uint(buffer,tmpval,10),format_uint_length(tmpval));
+		index  +=format_uint_length(tmpval);
+		memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
+		index  += sizeof("<br>") - 1;
+		
+		memcpy(html->data + index,"Offline Last Check:",sizeof("Offline Last Check:") - 1);
+		index  += sizeof("Offline Last Check:") - 1;
+		tmpval=item->value->offline_last;
+		memcpy(html->data + index,format_uint(buffer,tmpval,10),format_uint_length(tmpval));
+		index  +=format_uint_length(tmpval);
+		memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
+		index  += sizeof("<br>") - 1;
+		
+    }
+
+memcpy(html->data + index,"</body></html>",sizeof("</body></html>") - 1);
+index += sizeof("</body></html>") - 1;
+
+html->data[index] = 0;
+html->length = index;
+
+return html;
 }

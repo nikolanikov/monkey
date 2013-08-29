@@ -31,3 +31,9 @@ int proxy_balance_leastconnections(const struct proxy_server_entry_array *server
 int proxy_balance_init(const struct proxy_entry_array *config);
 
 void proxy_balance_close(void *connection);
+
+/* Statistics
+Creates the statistics html if set in the config.
+*/
+
+struct string *proxy_balance_generate_statistics(struct session_request *sr);

@@ -11,7 +11,7 @@
 #define RESPONSE_BUFFER_MIN 4096
 #define RESPONSE_BUFFER_MAX 65536
 
-MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.1", MK_PLUGIN_STAGE_30 | MK_PLUGIN_CORE_THCTX);
+MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.2", MK_PLUGIN_STAGE_30 | MK_PLUGIN_CORE_THCTX);
 
 struct proxy_context
 {
@@ -229,8 +229,10 @@ void _mkp_exit(void)
 
 int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct session_request *sr)
 {
+	struct string *html_stats;
 	struct proxy_context *context = pthread_getspecific(proxy_key);
-
+	
+	
 	(void)plugin;
 
 	write(2, "30\n", 3);
@@ -242,7 +244,7 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 		/* Non-first request on a keep-alive connection. */
 
 		write(2, "RESTAGE\n", 8);
-		sleep(1);
+		//sleep(1);
 
 		peer->request_index = 0;
 
@@ -259,7 +261,26 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 	else
 	{
 		/* First request for this connection. */
+		
+		/* check for statistics request */
+		html_stats = proxy_balance_generate_statistics(sr);
+		if(html_stats)
+		{
+			mk_api->header_set_http_status(sr, MK_HTTP_OK);
+			
+			sr->headers.content_length = html_stats->length;
+			sr->headers.content_type = mk_pointer_init("text/html\r\n");
+			
+			mk_api->header_send(cs->socket, cs, sr);
 
+			mk_api->socket_send(cs->socket, html_stats->data, html_stats->length);
+			
+			free(html_stats->data);
+			free(html_stats);
+			
+			return MK_PLUGIN_RET_END;
+		}
+		
 		peer = malloc(sizeof(struct proxy_peer));
 		if (!peer) return MK_PLUGIN_RET_CLOSE_CONX;
 
