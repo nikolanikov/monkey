@@ -109,9 +109,13 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
 	}
 }
 
-static void slave_disconnect(const struct proxy_peer *peer)
+static void slave_disconnect(struct proxy_peer *peer)
 {
-	if (peer->connection) proxy_balance_close(peer->connection);
+	if (peer->connection)
+	{
+		proxy_balance_close(peer->connection);
+		peer->connection = 0;
+	}
 }
 
 static int proxy_peer_add(struct dict *dict, int fd, struct proxy_peer *peer)
@@ -135,19 +139,19 @@ static struct proxy_peer *proxy_peer_remove(struct dict *dict, int fd)
 #include <stdio.h>
 static int proxy_close(int fd)
 {
+	int connected;
 	struct proxy_context *context = pthread_getspecific(proxy_key);
 
 	struct proxy_peer *peer = proxy_peer_remove(&context->slave, fd);
-	if (!peer) /*proxy_peer_remove(&context->client, peer->fd_client);
-	else*/
+	if (!peer)
 	{
 		peer = proxy_peer_remove(&context->client, fd);
 		if (!peer) return MK_PLUGIN_RET_EVENT_NEXT; /* nothing to do */
-		//proxy_peer_remove(&context->slave, peer->fd_slave);
 	}
 
 	printf("close: %d (%d,%d)\n", fd, peer->fd_client, peer->fd_slave);
 
+	connected = (peer->connection != 0);
 	slave_disconnect(peer);
 
 	if (fd == peer->fd_client)
@@ -162,6 +166,7 @@ static int proxy_close(int fd)
 	else
 	{
 		proxy_peer_remove(&context->slave, peer->fd_slave);
+		mk_api->event_del(peer->fd_slave); // TODO does this work
 
 		peer->fd_slave = -1;
 		//return MK_PLUGIN_RET_EVENT_OWNED;
