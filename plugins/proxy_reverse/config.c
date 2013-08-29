@@ -106,7 +106,10 @@ static void proxy_config_read_defaults(struct proxy_cnf_default_values *default_
 	default_values->server_list = 0;
 	default_values->count = 2;
 	default_values->timeout = 60;
+	default_values->stats_url = 0;
 
+	default_values->stats_url = mk_api->config_section_getval(section, "StatisticsURL", MK_CONFIG_VAL_STR);
+	
 	load_balancer = mk_api->config_section_getval(section, "LoadBalancer", MK_CONFIG_VAL_STR);
 
 	default_values->count = (long)mk_api->config_section_getval(section, "AttemptsCount", MK_CONFIG_VAL_NUM);
@@ -227,9 +230,11 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
 			if (tmp_values.server_list) entry_array->entry[entry_num].server_list = proxy_server_entry_array_dup(tmp_values.server_list);
 			else entry_array->entry[entry_num].server_list = proxy_server_entry_array_dup(default_values->server_list);
 			//read matches
-
+			
+			//TODO for count and timeout to check for every entry, currently they must be set in DEFAULTS
 			entry_array->entry[entry_num].count = default_values->count;
 			entry_array->entry[entry_num].timeout = default_values->timeout;
+			entry_array->entry[entry_num].stats_url = default_values->stats_url;
 
 			free_proxy_server_entry_array(tmp_values.server_list);
 

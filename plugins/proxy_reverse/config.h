@@ -36,6 +36,7 @@ struct proxy_cnf_default_values
 {
 	int count;
 	int timeout;
+	char *stats_url;
 	struct proxy_server_entry_array *server_list;
 	enum balancer_type balancer_type;
 };
@@ -47,6 +48,7 @@ struct proxy_entry
 	struct match_regex_array *regex_array;
 	int count;
 	int timeout;
+	char *stats_url; // May be to make better structure, and not to make stats_url for every entry
 };
 
 struct proxy_entry_array
