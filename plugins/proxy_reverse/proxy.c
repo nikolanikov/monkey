@@ -40,6 +40,8 @@ static int log;
 
 static struct proxy_entry_array *proxy_config;
 
+const mk_pointer mk_proxy_default_mime = mk_pointer_init("text/html\r\n");
+
 static int response_buffer_adjust(struct proxy_peer *peer, size_t size)
 {
 	/* Check buffer size and adjust it if necessary.
@@ -264,12 +266,12 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 		
 		/* check for statistics request */
 		html_stats = proxy_balance_generate_statistics(sr);
-		if (html_stat)
+		if (html_stats)
 		{
 			mk_api->header_set_http_status(sr, MK_HTTP_OK);
 			
 			sr->headers.content_length = html_stats->length;
-			sr->headers.content_type = mk_pointer_init("text/html\r\n");
+			sr->headers.content_type = mk_proxy_default_mime;
 			
 			mk_api->header_send(cs->socket, cs, sr);
 

@@ -27,7 +27,75 @@ struct server
 	time_t offline_last;
 };
 
-static char *format_uint(char *buffer, uint64_t number, uint16_t length)
+char *_format_uint_nofill(char *restrict buffer, uint64_t number, uint8_t base);
+
+// If number can't fit in length bytes, the behavior is undefined.
+char *_format_uint_fill(char *restrict buffer, uint64_t number, uint8_t base, uint16_t length, char fill);
+
+#define _VA_ARGS_EMPTY(...) (sizeof(#__VA_ARGS__) == 1)
+
+#define _ARGS5(func, a0, a1, a2, a3, a4, ...)   (func)(a0, a1, a2, a3, a4)
+
+// __VA_ARGS__ +0 is used below to prevent compiler error about empty argument
+
+// Add 3rd argument to 2 argument calls.
+#define format_uint(buffer, number, ...) _format_uint_((buffer), (number), _VA_ARGS_EMPTY(__VA_ARGS__) ? 10 : __VA_ARGS__ +0)
+// Call function depending on whether fill length is specified.
+#define _format_uint_(buffer, number, base, ...) (_VA_ARGS_EMPTY(__VA_ARGS__) ? \
+    _format_uint_nofill(buffer, number, base) : \
+    _ARGS5(_format_uint_fill, buffer, number, base, __VA_ARGS__ +0, ' ') \
+)
+
+static const unsigned char digits[64] = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+// Writes string representation in base base of number in buffer.
+// WARNING: buffer and number must be lvalues. TODO: explain what should base be
+// _next specifies how to iterate buffer after each character (it's either ++ or -- ).
+#define _format_digits(buffer, number, base, _next) do \
+    { \
+        do *(buffer)_next = digits[(size_t)((number) % (base))]; \
+        while ((number) /= (base)); \
+    } while (false)
+
+#define _format_uint_nofill_internal(buffer, number, base) do \
+    { \
+        char *start = (buffer); \
+        _format_digits((buffer), (number), (base), ++); \
+        char *end = (buffer)--; \
+        char swap; \
+        /* reverse digits to obtain the number */ \
+        while (start < (buffer)) \
+        { \
+            swap = *(buffer); \
+            *(buffer) = *start; \
+            *start = swap; \
+            ++start, --(buffer); \
+        } \
+        return end; \
+    } while (false)
+
+char *_format_uint_nofill(char *buffer, uint64_t number, uint8_t base)
+{
+    _format_uint_nofill_internal(buffer, number, base);
+}
+
+// If number can't fit in length bytes, the behavior is undefined.
+char *_format_uint_fill(char *buffer, uint64_t number, uint8_t base, uint16_t length, char fill)
+{
+    char *end = buffer + length, *position = end - 1;
+    _format_digits(position, number, base, --);
+    while (position >= buffer) *position-- = fill;
+    return end;
+}
+
+uint16_t format_uint_length(uint64_t number, uint8_t base)
+{
+    uint16_t length = 1;
+    while (number /= base) ++length;
+    return length;
+}
+
+/*static char *format_uint(char *buffer, uint64_t number, uint16_t length)
 {
 	char *end = buffer + length, *position = end - 1;
 	do *position-- = '0' + (number % 10);
@@ -39,17 +107,23 @@ static uint16_t format_uint_length(uint64_t number)
 	uint16_t length = 1;
 	while (number /= 10) ++length;
 	return length;
+}*/
+
+static char *format_bytes(char *buffer, const char *bytes, size_t size)
+{
+    memcpy(buffer, bytes, size);
+    return buffer + size;
 }
 
 static int key_init(struct string *key, const struct proxy_server_entry *entry)
 {
-	size_t length = format_uint_length(entry->port);
+	size_t length = format_uint_length(entry->port, 10);
 	key->length = strlen(entry->hostname);
 	if ((key->length + 1 + length) > SERVER_KEY_SIZE_LIMIT) return -1; /* invalid server entry */
 
 	memcpy(key->data, entry->hostname, key->length);
 	key->data[key->length++] = ':';
-	format_uint(key->data + key->length, entry->port, length);
+	format_uint(key->data + key->length, entry->port, 10, length);
 	key->length += length;
 
 	return 0;
@@ -294,22 +368,16 @@ size_t length=39;
 struct dict_iterator it;
 const struct dict_item *item;
 struct server *value;
-unsigned tmpval=0;
-unsigned index=0; 
-char buffer[10];
+//unsigned tmpval=0;
+//unsigned index=0; 
+//char buffer[10];
 struct string *html;
-/*
-struct server
-{
-	unsigned connections;
-	unsigned offline_count;
-	time_t offline_last;
-};
-*/
 
+/*
 (void)buffer;
 (void)tmpval;
 (void)value;
+*/
 
 if(!stats_url.data)return 0;
 if(sr->uri_processed.len != stats_url.length)return 0;
@@ -329,55 +397,80 @@ for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
     {
         length += item->key_size + sizeof("<br><b></b><br>") - 1 + sizeof("Connections:<br>") - 1 + 10 + sizeof("Offline Count:<br>") - 1 + 10 + sizeof("Offline Last Check:<br>") - 1 + 10 + 1 ;
     }
-
 	
 html->data = malloc(length * sizeof(char));
 
-memcpy(html->data,"<html><head></head><body>",sizeof("<html><head></head><body>") - 1);
-index += sizeof("<html><head></head><body>") - 1;
+#define STR(s) (s), sizeof(s) - 1
+
+char *start = format_bytes(html->data, STR("<html><head></head><body>"));
+
+//memcpy(html->data,"<html><head></head><body>",sizeof("<html><head></head><body>") - 1);
+//index += sizeof("<html><head></head><body>") - 1;
 
 for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
     {
         value = item->value;
+
+		start = format_bytes(start, STR("<br /><b>"));
+		start = format_bytes(start, item->key_data, item->key_size);
+		start = format_bytes(start, STR("</b><br />"));
+
+		start = format_bytes(start, STR("Connections:"));
+		start = format_uint(start, value->connections);
+		start = format_bytes(start, STR("<br />"));
+
+		start = format_bytes(start, STR("Offline Count:"));
+		start = format_uint(start, value->offline_count);
+		start = format_bytes(start, STR("<br />"));
+
+		start = format_bytes(start, STR("Offline Last Check:"));
+		start = format_uint(start, value->offline_last);
+		start = format_bytes(start, STR("<br />"));
 		
-		memcpy(html->data + index,"<br><b>",sizeof("<br><b>") - 1);
+		/*memcpy(html->data + index,"<br><b>",sizeof("<br><b>") - 1);
 		index  += sizeof("<br><b>") - 1;
 		memcpy(html->data + index,item->key_data, item->key_size);
 		index  += item->key_size;
 		memcpy(html->data + index,"</b><br>",sizeof("</b><br>") - 1);
-		index  += sizeof("</b><br>") - 1;
+		index  += sizeof("</b><br>") - 1;*/
 		
-		memcpy(html->data + index,"Connections:",sizeof("Connections:") - 1);
+		/*memcpy(html->data + index,"Connections:",sizeof("Connections:") - 1);
 		index  += sizeof("Connections:") - 1;
-		tmpval=item->value->connections;
-		memcpy(html->data + index,format_uint(buffer,tmpval,10),format_uint_length(tmpval));
-		index  +=format_uint_length(tmpval);
+		tmpval=value->connections;
+		format_uint(buffer,tmpval,0);
+		memcpy(html->data + index,buffer,format_uint_length(tmpval));
+		index  +=format_uint_length(tmpval); // TODO may be there is no point of calculating the length again because format_uint()-buffer is the len
 		memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
-		index  += sizeof("<br>") - 1;
+		index  += sizeof("<br>") - 1;*/
 		
-		memcpy(html->data + index,"Offline Count:",sizeof("Offline Count:") - 1);
+		/*memcpy(html->data + index,"Offline Count:",sizeof("Offline Count:") - 1);
 		index  += sizeof("Offline Count:") - 1;
-		tmpval=item->value->offline_count;
-		memcpy(html->data + index,format_uint(buffer,tmpval,10),format_uint_length(tmpval));
+		tmpval=value->offline_count;
+		format_uint(buffer,tmpval,0);
+		memcpy(html->data + index,buffer,format_uint_length(tmpval));
 		index  +=format_uint_length(tmpval);
 		memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
-		index  += sizeof("<br>") - 1;
+		index  += sizeof("<br>") - 1;*/
 		
-		memcpy(html->data + index,"Offline Last Check:",sizeof("Offline Last Check:") - 1);
+		/*memcpy(html->data + index,"Offline Last Check:",sizeof("Offline Last Check:") - 1);
 		index  += sizeof("Offline Last Check:") - 1;
-		tmpval=item->value->offline_last;
-		memcpy(html->data + index,format_uint(buffer,tmpval,10),format_uint_length(tmpval));
+		tmpval=value->offline_last;
+		format_uint(buffer,tmpval,0);
+		memcpy(html->data + index,buffer,format_uint_length(tmpval));
 		index  +=format_uint_length(tmpval);
 		memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
-		index  += sizeof("<br>") - 1;
-		
+		index  += sizeof("<br>") - 1;*/
     }
 
-memcpy(html->data + index,"</body></html>",sizeof("</body></html>") - 1);
-index += sizeof("</body></html>") - 1;
+start = format_bytes(start, STR("</body></html>"));
 
-html->data[index] = 0;
-html->length = index;
+#undef STR
+
+/*memcpy(html->data + index,"</body></html>",sizeof("</body></html>") - 1);
+index += sizeof("</body></html>") - 1;*/
+
+html->length = start - html->data;
+html->data[html->length] = 0;
 
 return html;
 }
