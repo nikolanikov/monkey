@@ -11,7 +11,11 @@
 #define RESPONSE_BUFFER_MIN 4096
 #define RESPONSE_BUFFER_MAX 65536
 
+/* https://lotrax.org/gsoc/two-common-monkey-plugin-patterns.html */
+
 MONKEY_PLUGIN("proxy_reverse", "Reverse Proxy", "0.2", MK_PLUGIN_STAGE_30 | MK_PLUGIN_CORE_THCTX);
+
+#include <stdio.h>
 
 struct proxy_context
 {
@@ -141,7 +145,6 @@ static struct proxy_peer *proxy_peer_remove(struct dict *dict, int fd)
 	return dict_remove(dict, &key);
 }
 
-#include <stdio.h>
 static int proxy_close(int fd)
 {
 	int connected;
@@ -151,26 +154,20 @@ static int proxy_close(int fd)
 	if (!peer)
 	{
 		peer = proxy_peer_remove(&context->client, fd);
-		//if (!peer) return MK_PLUGIN_RET_EVENT_CONTINUE; /* nothing to do */
-		if (!peer) return MK_PLUGIN_RET_EVENT_NEXT; /* nothing to do */
+		if (!peer) return MK_PLUGIN_RET_EVENT_CONTINUE; /* nothing to do */
+		//if (!peer) return MK_PLUGIN_RET_EVENT_NEXT; /* nothing to do */
 	}
-
-	printf("sockets: %d (%d,%d)\n", fd, peer->fd_client, peer->fd_slave);
 
 	connected = peer->slave;
 	slave_disconnect(peer);
 
 	if (fd == peer->fd_client) /* the event is for the client socket */
 	{
-		mk_api->event_del(peer->fd_client); // TODO remove this
-
 		if (connected) /* the slave is still connected */
 		{
 			proxy_peer_remove(&context->slave, peer->fd_slave);
 			mk_api->event_del(peer->fd_slave);
 		}
-
-		printf("close %d\n", peer->fd_slave);
 
 		/* avoid TIME_WAIT by sending RST to the slave */
 		struct linger linger;
@@ -178,6 +175,8 @@ static int proxy_close(int fd)
 		linger.l_linger = 0;
 		setsockopt(peer->fd_slave, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 		mk_api->socket_close(peer->fd_slave);
+
+		mk_api->event_del(peer->fd_client);
 	}
 	else /* the event is for the slave socket */
 	{
@@ -239,7 +238,6 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 	(void)plugin;
 
 	//write(2, "30\n", 3);
-	printf("socket: %d\n", cs->socket);
 
 	struct proxy_peer *peer = proxy_peer_get(&context->client, cs->socket);
 	if (peer)
@@ -294,8 +292,6 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 			free(peer);
 			return MK_PLUGIN_RET_CLOSE_CONX; // TODO
 		}
-
-		printf("opened: %d\n", peer->fd_slave);
 
 		peer->mode_client = MK_EPOLL_SLEEP;
 		peer->mode_slave = MK_EPOLL_WRITE;
@@ -399,7 +395,7 @@ int _mkp_event_write(int socket)
 
 			if (peer->response.index == peer->response.total)
 			{
-				mk_api->http_request_end(socket);
+				if (mk_api->http_request_end(socket)) return MK_PLUGIN_RET_EVENT_CLOSE;
 				return MK_PLUGIN_RET_EVENT_CONTINUE;
 			}
 
@@ -417,7 +413,12 @@ int _mkp_event_write(int socket)
 	else
 	{
 		peer = proxy_peer_get(&context->slave, socket);
-		if (!peer) return MK_PLUGIN_RET_EVENT_NEXT;
+		if (!peer)
+		{
+			//mk_api->event_socket_change_mode(socket, MK_EPOLL_SLEEP, MK_EPOLL_LEVEL_TRIGGERED);
+			//return MK_PLUGIN_RET_EVENT_OWNED;
+			return MK_PLUGIN_RET_EVENT_NEXT;
+		}
 
 		/* We can write to the slave server. */
 
@@ -458,6 +459,12 @@ int _mkp_event_write(int socket)
 }
 
 int _mkp_event_close(int fd)
+{
+	//write(2, "CLOSE\n", 6);
+	return proxy_close(fd);
+}
+
+int _mkp_event_timeout(int fd)
 {
 	//write(2, "CLOSE\n", 6);
 	return proxy_close(fd);
