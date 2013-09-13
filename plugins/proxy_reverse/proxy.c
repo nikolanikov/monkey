@@ -89,6 +89,8 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
 	memcpy(string, sr->uri_processed.data, sr->uri_processed.len);
 	string[sr->uri_processed.len] = 0;
 
+	MK_TRACE("Balancer for %s", string);
+
 	struct proxy_entry *match = proxy_check_match(string, proxy_config);
 	free(string);
 	if (!match) return -1;
@@ -100,18 +102,25 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
 	switch (match->balancer_type)
 	{
 	case Naive:
+		MK_TRACE("Balance: \"Naive\"");
 		return proxy_balance_naive(match->server_list, time(0));
 	case FirstAlive:
+		MK_TRACE("Balance: \"First Alive\"");
 		return proxy_balance_firstalive(match->server_list);
 	case SourceHash:
+		MK_TRACE("Balance: \"Source Hash\"");
 		return proxy_balance_hash(match->server_list, sock);
 	case RoundRobin:
+		MK_TRACE("Balance: \"Round Robin\"");
 		return proxy_balance_rr_lockless(match->server_list);
 	case LockingRoundRobin:
+		MK_TRACE("Balance: \"Locking Round Robin\"");
 		return proxy_balance_rr_locking(match->server_list);
 	case LeastConnections:
+		MK_TRACE("Balance: \"Least Connections\"");
 		return proxy_balance_leastconnections(match->server_list, &peer->connection);
 	default:
+		MK_TRACE("Invalid balancer");
 		return -1;
 	}
 }
@@ -169,6 +178,8 @@ static int proxy_close(int fd)
 			mk_api->event_del(peer->fd_slave);
 		}
 
+		MK_TRACE("[FD %i] Closing client socket", fd);
+
 		/* avoid TIME_WAIT by sending RST to the slave */
 		struct linger linger;
 		linger.l_onoff = 1;
@@ -180,6 +191,8 @@ static int proxy_close(int fd)
 	}
 	else /* the event is for the slave socket */
 	{
+		MK_TRACE("[FD %i] Disabling slave socket", socket);
+
 		mk_api->event_del(peer->fd_slave);
 		return MK_PLUGIN_RET_EVENT_OWNED;
 	}
@@ -237,14 +250,12 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 
 	(void)plugin;
 
-	//write(2, "30\n", 3);
-
 	struct proxy_peer *peer = proxy_peer_get(&context->client, cs->socket);
 	if (peer)
 	{
 		/* Non-first request on a keep-alive connection. */
 
-		write(2, "RESTAGE\n", 8);
+		MK_TRACE("[FD %i] New request", cs->socket);
 
 		peer->request_index = 0;
 
@@ -261,6 +272,8 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 	else
 	{
 		/* First request for this connection. */
+
+		MK_TRACE("[FD %i] New connection", cs->socket);
 		
 		/* check for statistics request */
 		html_stats = proxy_balance_generate_statistics(sr);
@@ -293,6 +306,8 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 			return MK_PLUGIN_RET_CLOSE_CONX; // TODO
 		}
 
+		MK_TRACE("[FD %i] Created slave socket", peer->fd_slave);
+
 		peer->mode_client = MK_EPOLL_SLEEP;
 		peer->mode_slave = MK_EPOLL_WRITE;
 
@@ -324,7 +339,7 @@ int _mkp_event_read(int socket)
 	{
 		/* We can read from the slave server. */
 
-		//write(2, "  <- S\n", 7);
+		MK_TRACE("[FD %i] Read event on slave socket", socket);
 
 		/*if (!peer->response.total)
 		{
@@ -338,6 +353,7 @@ int _mkp_event_read(int socket)
 			if (!response_buffer_adjust(peer, peer->response.size + 1))
 			{
 				/* Don't poll for reading until we have free space in the buffer. */
+				MK_TRACE("[FD %i] Read buffer full", socket);
 				//peer->mode_slave &= ~MK_EPOLL_READ;
 				//mk_api->event_socket_change_mode(peer->fd_slave, peer->mode_slave, MK_EPOLL_LEVEL_TRIGGERED);
 				//return MK_PLUGIN_RET_EVENT_OWNED;
@@ -352,7 +368,11 @@ int _mkp_event_read(int socket)
 
 		// Set response code.
 		if ((!peer->sr->headers.status) && (peer->response.total >= 12))
-			mk_api->header_set_http_status(peer->sr, strtol(peer->response.buffer + 9, 0, 10));
+		{
+			int code = strtol(peer->response.buffer + 9, 0, 10);
+			MK_TRACE("[FD %i] Response code = %i", socket, code);
+			mk_api->header_set_http_status(peer->sr, code);
+		}
 
 		mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_WRITE, MK_EPOLL_LEVEL_TRIGGERED);
 
@@ -361,6 +381,8 @@ int _mkp_event_read(int socket)
 	else
 	{
 		/* We can read from a client. */
+
+		MK_TRACE("[FD %i] Read event on client socket", socket);
 
 		peer = proxy_peer_get(&context->client, socket);
 		if (peer)
@@ -384,7 +406,7 @@ int _mkp_event_write(int socket)
 	{
 		/* We can write to the client. */
 
-		//write(2, "C <-  \n", 7);
+		MK_TRACE("[FD %i] Write event on client socket", socket);
 
 		/* Write response to the client. Don't poll for writing if we don't have anything to write. */
 		if (peer->response.index < peer->response.total)
@@ -395,6 +417,7 @@ int _mkp_event_write(int socket)
 
 			if (peer->response.index == peer->response.total)
 			{
+				MK_TRACE("[FD %i] Response sent", socket);
 				if (mk_api->http_request_end(socket)) return MK_PLUGIN_RET_EVENT_CLOSE;
 				return MK_PLUGIN_RET_EVENT_CONTINUE;
 			}
@@ -402,7 +425,7 @@ int _mkp_event_write(int socket)
 			return MK_PLUGIN_RET_EVENT_OWNED;
 		}
 
-		//write(2, "C <X  \n", 7);
+		MK_TRACE("[FD %i] Nothing to write; Wait for read event", socket);
 		mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_READ, MK_EPOLL_LEVEL_TRIGGERED);
 
 		return MK_PLUGIN_RET_EVENT_CONTINUE;
@@ -422,7 +445,7 @@ int _mkp_event_write(int socket)
 
 		/* We can write to the slave server. */
 
-		//write(2, "  -> S\n", 7);
+		MK_TRACE("[FD %i] Write event on slave socket", socket);
 
 		/* Make sure we poll for incoming data from the slave server. */
 		/*if (!(peer->mode_slave & MK_EPOLL_READ))
@@ -443,6 +466,7 @@ int _mkp_event_write(int socket)
 		if (peer->request_index == total)
 		{
 			//mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_WRITE, MK_EPOLL_LEVEL_TRIGGERED);
+			MK_TRACE("[FD %i] Request sent; Wait for read event", socket);
 			mk_api->event_socket_change_mode(peer->fd_slave, MK_EPOLL_READ, MK_EPOLL_LEVEL_TRIGGERED);
 		}
 

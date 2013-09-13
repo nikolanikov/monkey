@@ -179,7 +179,7 @@ static int balance_connect(const struct proxy_server_entry *entry)
 	char buffer[SERVER_KEY_SIZE_LIMIT];
 	struct string key;
 
-	volatile struct server *info;
+	volatile struct server *info = 0;
 
 	time_t now = time(0);
 
