@@ -96,7 +96,7 @@ static inline int mk_list_is_empty(struct mk_list *head)
  */
 #define mk_list_entry_first(ptr, type, member) container_of((ptr)->next, type, member)
 
-/* First node of the list
+/* Last node of the list
  * ---------------------
  * Be careful with this Macro, its intended to be used when some node is already linked
  * to the list (ptr). If the list is empty it will return the list address as it points

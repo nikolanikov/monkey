@@ -694,7 +694,7 @@ int mk_handler_write(int socket, struct client_session *cs)
     }
 
     /*
-     * If we are here, is because all pipelined request were
+     * If we are here, it is because all pipelined request were
      * processed successfully, let's return 0;
      */
     return 0;

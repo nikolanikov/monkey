@@ -103,7 +103,7 @@ int mk_conn_write(int socket)
     struct sched_list_node *sched;
     struct sched_connection *conx;
 
-     MK_TRACE("[FD %i] Connection Handler / write", socket);
+    MK_TRACE("[FD %i] Connection Handler / write", socket);
 
     /* Plugin hook */
     ret = mk_plugin_event_write(socket);
@@ -145,10 +145,10 @@ int mk_conn_write(int socket)
     ret = mk_handler_write(socket, cs);
 
     /* if ret < 0, means that some error
-     * happened in the writer call, in the
+     * happened in the writer call, on the
      * other hand, 0 means a successful request
-     * processed, if ret > 0 means that some data
-     * still need to be send.
+     * processed, if ret > 0 then some data
+     * still needs to be sent.
      */
     if (ret < 0) {
         mk_request_free_list(cs);
@@ -162,7 +162,7 @@ int mk_conn_write(int socket)
         return 0;
     }
 
-    /* avoid to make gcc cry :_( */
+    /* avoid making gcc cry :_( */
     return -1;
 }
 

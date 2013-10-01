@@ -342,6 +342,7 @@ void mk_plugin_init()
     api->str_copy_substr = mk_string_copy_substr;
     api->str_itop = mk_string_itop;
     api->str_split_line = mk_string_split_line;
+	api->str_split_free = mk_string_split_free;
 
     /* File Callbacks */
     api->file_to_buffer = mk_file_to_buffer;
@@ -623,8 +624,8 @@ int mk_plugin_stage_run(unsigned int hook,
                     break;
                 case MK_PLUGIN_RET_END:
                     /*
-                     * A plugin cannot say that have finish it works if the response
-                     * headers have not been send. If the intention is to close the
+                     * A plugin cannot say that it has finished its work if the response
+                     * headers have not been sent. If the intention is to close the
                      * connection use MK_PLUGIN_RET_CLOSE_CONX.
                      */
                     mk_bug(sr->headers.sent == MK_FALSE);

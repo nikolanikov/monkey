@@ -404,7 +404,7 @@ int mk_http_init(struct client_session *cs, struct session_request *sr)
         }
     }
 
-    /* is it a valid directory ? */
+    /* is it a valid directory? */
     if (sr->file_info.is_directory == MK_TRUE) {
         /* Send redirect header if end slash is not found */
         if (mk_http_directory_redirect_check(cs, sr) == -1) {
