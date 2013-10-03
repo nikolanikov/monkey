@@ -68,17 +68,28 @@ const mk_pointer mk_proxy_default_mime = mk_pointer_init("text/html\r\n");
 
 static int response_buffer_adjust(struct proxy_peer *peer, size_t size)
 {
-    /* Check buffer size and adjust it if necessary.
-       RESPONSE_BUFFER_MIN <= size <= RESPONSE_BUFFER_MAX
-       size % RESPONSE_BUFFER_MIN == 0 */
-    if (size > RESPONSE_BUFFER_MAX) return 0;
-    if (size < RESPONSE_BUFFER_MIN) size = RESPONSE_BUFFER_MIN;
-    else size = (size + RESPONSE_BUFFER_MIN - 1) & ~(RESPONSE_BUFFER_MIN - 1);
 
+    if (size > RESPONSE_BUFFER_MAX)
+    {
+        return 0;
+    }
+    if (size < RESPONSE_BUFFER_MIN)
+    {
+        size = RESPONSE_BUFFER_MIN;
+    }
+    else
+    {
+        size = (size + RESPONSE_BUFFER_MIN - 1) & ~(RESPONSE_BUFFER_MIN - 1);
+    }
+    
+    
     if (!peer->response.size)
     {
         peer->response.buffer = mk_api->mem_alloc(size);
-        if (!peer) return 0;
+        if (!peer)
+        {
+            return 0;
+        }
     }
     else if (peer->response.size < size)
     {
@@ -86,16 +97,25 @@ static int response_buffer_adjust(struct proxy_peer *peer, size_t size)
         if (peer->response.index)
         {
             size_t available = peer->response.total - peer->response.index;
-            if (available) memmove(peer->response.buffer, peer->response.buffer + peer->response.index, available);
+            if (available)
+            {
+                memmove(peer->response.buffer, peer->response.buffer + peer->response.index, available);
+            }
             peer->response.total = available;
             peer->response.index = 0;
         }
 
         peer->response.buffer = realloc(peer->response.buffer, size);
-        if (!peer) return 0;
+        if (!peer)
+        {
+            return 0;
+        }
     }
-    else return 1;
-
+    else 
+    {
+        return 1;
+    }
+    
     peer->response.size = size;
 
     return 1;
@@ -105,7 +125,10 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
 {
     const struct session_request *sr = peer->sr;
     char *string = mk_api->mem_alloc(sr->uri_processed.len + 1);
-    if (!string) return -1;
+    if (!string)
+    {
+        return -1;
+    }
     memcpy(string, sr->uri_processed.data, sr->uri_processed.len);
     string[sr->uri_processed.len] = 0;
 
@@ -113,7 +136,10 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
 
     struct proxy_entry *match = proxy_check_match(string, proxy_config);
     mk_api->mem_free(string);
-    if (!match) return -1;
+    if (!match)
+    {
+        return -1;
+    }
 
     peer->connection = 0;
     peer->slave = 1;
@@ -183,8 +209,11 @@ static int proxy_close(int fd)
     if (!peer)
     {
         peer = proxy_peer_remove(&context->client, fd);
-        if (!peer) return MK_PLUGIN_RET_EVENT_CONTINUE; /* nothing to do */
-        //if (!peer) return MK_PLUGIN_RET_EVENT_NEXT; /* nothing to do */
+        if (!peer)
+        {
+            return MK_PLUGIN_RET_EVENT_CONTINUE; /* nothing to do */
+        }
+        
     }
 
     connected = peer->slave;
@@ -231,9 +260,15 @@ int _mkp_init(struct plugin_api **api, char *confdir)
     pthread_key_create(&proxy_key, 0);
 
     proxy_config = proxy_reverse_read_config(confdir);
-    if (!proxy_config->length) return -1;
-
-    if (proxy_balance_init(proxy_config) < 0) return -1;
+    if (!proxy_config->length)
+    {
+        return -1;
+    }
+    
+    if (proxy_balance_init(proxy_config) < 0)
+    {
+        return -1;
+    }
 
     return 0;
 }
@@ -252,8 +287,14 @@ void _mkp_core_thctx(void)
         abort();
     }
 
-    if (!dict_init(&context->client, 4)) return;
-    if (!dict_init(&context->slave, 4)) return;
+    if (!dict_init(&context->client, 4))
+    {
+        return;
+    }
+    if (!dict_init(&context->slave, 4))
+    {
+        return;
+    }
 
     pthread_setspecific(proxy_key, context);
 }
@@ -315,8 +356,11 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
         }
         
         peer = mk_api->mem_alloc(sizeof(struct proxy_peer));
-        if (!peer) return MK_PLUGIN_RET_CLOSE_CONX;
-
+        if (!peer)
+        {
+            return MK_PLUGIN_RET_CLOSE_CONX;
+        }
+        
         peer->sr = sr;
         peer->fd_client = cs->socket;
         peer->fd_slave = slave_connect(peer, proxy_config, cs->socket);
@@ -342,8 +386,14 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
         peer->response.total = 0;
         response_buffer_adjust(peer, RESPONSE_BUFFER_MIN);
 
-        if (proxy_peer_add(&context->client, cs->socket, peer)) return MK_PLUGIN_RET_CLOSE_CONX; // TODO
-        if (proxy_peer_add(&context->slave, peer->fd_slave, peer)) return MK_PLUGIN_RET_CLOSE_CONX; // TODO
+        if (proxy_peer_add(&context->client, cs->socket, peer))
+        {
+            return MK_PLUGIN_RET_CLOSE_CONX;
+        }
+        if (proxy_peer_add(&context->slave, peer->fd_slave, peer))
+        {
+            return MK_PLUGIN_RET_CLOSE_CONX;
+        }
     }
 
     return MK_PLUGIN_RET_CONTINUE;
@@ -383,7 +433,10 @@ int _mkp_event_read(int socket)
         }
 
         ssize_t size = read(peer->fd_slave, peer->response.buffer + peer->response.total, left);
-        if (size <= 0) return proxy_close(peer->fd_slave);
+        if (size <= 0)
+        {
+            return proxy_close(peer->fd_slave);
+        }
         peer->response.total += size;
 
         // Set response code.
@@ -411,7 +464,10 @@ int _mkp_event_read(int socket)
             mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_RW, MK_EPOLL_LEVEL_TRIGGERED);
             return MK_PLUGIN_RET_EVENT_NEXT;
         }
-        else return MK_PLUGIN_RET_EVENT_NEXT;
+        else
+        {
+            return MK_PLUGIN_RET_EVENT_NEXT;
+        }
     }
 }
 
@@ -432,13 +488,19 @@ int _mkp_event_write(int socket)
         if (peer->response.index < peer->response.total)
         {
             size = write(peer->fd_client, peer->response.buffer + peer->response.index, peer->response.total - peer->response.index);
-            if (size < 0) return proxy_close(peer->fd_client);
+            if (size < 0)
+            {
+                return proxy_close(peer->fd_client);
+            }
             peer->response.index += size;
 
             if (peer->response.index == peer->response.total)
             {
                 MK_TRACE("[FD %i] Response sent", socket);
-                if (mk_api->http_request_end(socket)) return MK_PLUGIN_RET_EVENT_CLOSE;
+                if (mk_api->http_request_end(socket))
+                {
+                    return MK_PLUGIN_RET_EVENT_CLOSE;
+                }
                 return MK_PLUGIN_RET_EVENT_CONTINUE;
             }
 
@@ -450,16 +512,12 @@ int _mkp_event_write(int socket)
 
         return MK_PLUGIN_RET_EVENT_CONTINUE;
 
-        /*peer->mode_client &= ~MK_EPOLL_WRITE;
-        mk_api->event_socket_change_mode(peer->fd_client, peer->mode_client, MK_EPOLL_LEVEL_TRIGGERED);*/
     }
     else
     {
         peer = proxy_peer_get(&context->slave, socket);
         if (!peer)
         {
-            //mk_api->event_socket_change_mode(socket, MK_EPOLL_SLEEP, MK_EPOLL_LEVEL_TRIGGERED);
-            //return MK_PLUGIN_RET_EVENT_OWNED;
             return MK_PLUGIN_RET_EVENT_NEXT;
         }
 
@@ -467,36 +525,26 @@ int _mkp_event_write(int socket)
 
         MK_TRACE("[FD %i] Write event on slave socket", socket);
 
-        /* Make sure we poll for incoming data from the slave server. */
-        /*if (!(peer->mode_slave & MK_EPOLL_READ))
-        {
-            peer->mode_slave |= MK_EPOLL_READ;
-            mk_api->event_socket_change_mode(peer->fd_slave, peer->mode_slave, MK_EPOLL_LEVEL_TRIGGERED);
-        }*/
+      
 
         /* Write request to the slave server. */
         size_t total = peer->sr->body.len + sizeof("\r\n\r\n") - 1 + peer->sr->data.len;
         if (peer->request_index < total)
         {
             size = write(peer->fd_slave, peer->sr->body.data + peer->request_index, total - peer->request_index);
-            if (size < 0) return proxy_close(peer->fd_slave);
+            if (size < 0)
+            {
+                return proxy_close(peer->fd_slave);
+            }
             peer->request_index += size;
         }
 
         if (peer->request_index == total)
         {
-            //mk_api->event_socket_change_mode(peer->fd_client, MK_EPOLL_WRITE, MK_EPOLL_LEVEL_TRIGGERED);
             MK_TRACE("[FD %i] Request sent; Wait for read event", socket);
             mk_api->event_socket_change_mode(peer->fd_slave, MK_EPOLL_READ, MK_EPOLL_LEVEL_TRIGGERED);
         }
 
-        /* // Make sure we poll for incoming data from the slave server.
-        peer->mode_slave |= MK_EPOLL_READ;
-        mk_api->event_socket_change_mode(peer->fd_slave, peer->mode_slave, MK_EPOLL_LEVEL_TRIGGERED);
-
-        // Don't poll for writing since we don't have anything to write.
-        peer->mode_slave &= ~MK_EPOLL_WRITE;
-        mk_api->event_socket_change_mode(peer->fd_slave, peer->mode_slave, MK_EPOLL_LEVEL_TRIGGERED);*/
     }
 
     return MK_PLUGIN_RET_EVENT_OWNED;
@@ -504,18 +552,15 @@ int _mkp_event_write(int socket)
 
 int _mkp_event_close(int fd)
 {
-    //write(2, "CLOSE\n", 6);
     return proxy_close(fd);
 }
 
 int _mkp_event_timeout(int fd)
 {
-    //write(2, "CLOSE\n", 6);
     return proxy_close(fd);
 }
 
 int _mkp_event_error(int fd)
 {
-    //write(2, "CLOSE\n", 6);
     return proxy_close(fd);
 }

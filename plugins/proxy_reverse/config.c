@@ -29,15 +29,25 @@ struct proxy_entry *proxy_check_match(char *url, struct proxy_entry_array *confi
 {
     size_t i, u;
     for (i = 0; i < config->length; i++)
+    {
         for(u = 0; u < config->entry[i].regex_array->length; u++)
-            if (!regexec(&config->entry[i].regex_array->entry[u], url, 0, NULL, 0)) return &config->entry[i];
+        {
+            if (!regexec(&config->entry[i].regex_array->entry[u], url, 0, NULL, 0))
+                {
+                return &config->entry[i];
+                }
+        }
+    }
     return 0;
 }
 
 static void free_proxy_server_entry_array(struct proxy_server_entry_array *server_list)
 {
     size_t i;
-    if (!server_list) return;
+    if (!server_list)
+    {
+        return;
+    }
     for(i = 0; i < server_list->length; i++)
     {
         mk_api->mem_free(server_list->entry[i].hostname);
@@ -54,19 +64,31 @@ static struct proxy_server_entry_array *proxy_parse_ServerList(char *server_addr
     struct mk_list *server_list = mk_api->str_split_line(server_addr);
     struct proxy_server_entry_array *proxy_server_array = 0;
 
-    if (!server_addr) return 0;
-
+    if (!server_addr)
+    {
+        return 0;
+    }
+    
     line = mk_api->str_split_line(server_addr);
-    if (!line) return 0;
+    if (!line)
+    {
+        return 0;
+    }
 
     mk_list_foreach(head, line)
     {
         server_num++;
     }
-    if (!server_num) return 0;
+    if (!server_num)
+    {
+        return 0;
+    }
 
     proxy_server_array = mk_api->mem_alloc(sizeof(struct proxy_server_entry_array) + sizeof(struct proxy_server_entry) * server_num);
-    if (!proxy_server_array) return 0;
+    if (!proxy_server_array)
+    {
+        return 0;
+    }
     proxy_server_array->length = server_num;
 
     server_num = 0;
@@ -106,7 +128,10 @@ static struct proxy_server_entry_array *proxy_server_entry_array_dup(struct prox
     struct proxy_server_entry_array *proxy_server_array;
     size_t i;
     proxy_server_array = mk_api->mem_alloc(sizeof(struct proxy_server_entry_array) + sizeof(struct proxy_server_entry) * array_to_dup->length);
-    if (!proxy_server_array) return 0;
+    if (!proxy_server_array)
+    {
+        return 0;
+    }
     proxy_server_array->length = array_to_dup->length;
 
     for(i = 0; i < proxy_server_array->length; i++)
@@ -141,31 +166,42 @@ static void proxy_config_read_defaults(struct proxy_cnf_default_values *default_
     if (load_balancer)
     {
         if (!strcasecmp(load_balancer, "naive"))
+        {
             default_values->balancer_type = Naive;
-
+        }
         else if (!strcasecmp(load_balancer, "first-alive"))
+        {
             default_values->balancer_type = FirstAlive;
-
+        }
         else if (!strcasecmp(load_balancer, "roundrobin"))
+        {
             default_values->balancer_type = RoundRobin;
-
+        }
         else if (!strcasecmp(load_balancer, "sourcehash"))
+        {
             default_values->balancer_type = SourceHash;
-
+        }
         else if (!strcasecmp(load_balancer, "lockingroundrobin"))
+        {
             default_values->balancer_type = LockingRoundRobin;
-
+        }
         else if (!strcasecmp(load_balancer, "leastconnections"))
+        {
             default_values->balancer_type = LeastConnections;
-
+        }
         else
+        {
             default_values->balancer_type = RoundRobin;
+        }
 
         mk_api->mem_free(load_balancer);
     }
 
     server_addr = mk_api->config_section_getval(section, "ServerList", MK_CONFIG_VAL_STR);
-    if (server_addr) default_values->server_list = proxy_parse_ServerList(server_addr);
+    if (server_addr)
+    {
+        default_values->server_list = proxy_parse_ServerList(server_addr);
+    }
 }
 
 static void str_to_regex(char *str, regex_t *reg) // From the CGI Plugin
@@ -196,7 +232,11 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
     struct proxy_cnf_default_values tmp_values;
 
     entry_array = mk_api->mem_alloc(sizeof(struct proxy_entry_array) + sizeof(struct proxy_entry) * entry_num);
-    if (!entry_array) return 0;
+    if (!entry_array)
+    {
+        return 0;
+    }
+    
     entry_array->length = entry_num;
     entry_num = 0;
     mk_list_foreach(head, &config->sections)
@@ -224,7 +264,10 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
             mk_list_foreach(head_match, &section->entries)
             {
                 entry = mk_list_entry(head_match, struct mk_config_entry, _head);
-                if (!strncasecmp(entry->key, "Match", strlen(entry->key))) i++;
+                if (!strncasecmp(entry->key, "Match", strlen(entry->key)))
+                {
+                    i++;
+                }
             }
             if (!i)
             {
@@ -244,11 +287,23 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
                 i = 0;
             }
 
-            if (tmp_values.balancer_type) entry_array->entry[entry_num].balancer_type = tmp_values.balancer_type;
-            else entry_array->entry[entry_num].balancer_type = default_values->balancer_type;
-
-            if (tmp_values.server_list) entry_array->entry[entry_num].server_list = proxy_server_entry_array_dup(tmp_values.server_list);
-            else entry_array->entry[entry_num].server_list = proxy_server_entry_array_dup(default_values->server_list);
+            if (tmp_values.balancer_type)
+            {
+                entry_array->entry[entry_num].balancer_type = tmp_values.balancer_type;
+            }
+            else
+            {
+                entry_array->entry[entry_num].balancer_type = default_values->balancer_type;
+            }
+            
+            if (tmp_values.server_list)
+            {
+                entry_array->entry[entry_num].server_list = proxy_server_entry_array_dup(tmp_values.server_list);
+            }
+            else
+            {
+                entry_array->entry[entry_num].server_list = proxy_server_entry_array_dup(default_values->server_list);
+            }
             //read matches
             
             //TODO for count and timeout to check for every entry, currently they must be set in DEFAULTS
@@ -303,8 +358,14 @@ struct proxy_entry_array *proxy_reverse_read_config(const char *path)
     {
         section = mk_list_entry(head, struct mk_config_section, _head);
 
-        if (!strcasecmp(section->name, "PROXY_ENTRY")) proxy_entries++;
-        else if (!strcasecmp(section->name, "PROXY_DEFAULTS")) proxy_config_read_defaults(&default_values,section);
+        if (!strcasecmp(section->name, "PROXY_ENTRY"))
+        {
+            proxy_entries++;
+        }
+        else if (!strcasecmp(section->name, "PROXY_DEFAULTS"))
+        {
+            proxy_config_read_defaults(&default_values,section);
+        }
     }
 
     if (!proxy_entries)

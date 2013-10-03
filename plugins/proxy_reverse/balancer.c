@@ -115,20 +115,6 @@ uint16_t format_uint_length(uint64_t number, uint8_t base)
     return length;
 }
 
-/*static char *format_uint(char *buffer, uint64_t number, uint16_t length)
-{
-    char *end = buffer + length, *position = end - 1;
-    do *position-- = '0' + (number % 10);
-    while (number /= 10);
-    return end;
-}
-static uint16_t format_uint_length(uint64_t number)
-{
-    uint16_t length = 1;
-    while (number /= 10) ++length;
-    return length;
-}*/
-
 static char *format_bytes(char *buffer, const char *bytes, size_t size)
 {
     memcpy(buffer, bytes, size);
@@ -139,7 +125,10 @@ static int key_init(struct string *key, const struct proxy_server_entry *entry)
 {
     size_t length = format_uint_length(entry->port, 10);
     key->length = strlen(entry->hostname);
-    if ((key->length + 1 + length) > SERVER_KEY_SIZE_LIMIT) return -1; /* invalid server entry */
+    if ((key->length + 1 + length) > SERVER_KEY_SIZE_LIMIT)
+    {
+        return -1; /* invalid server entry */
+    }
 
     memcpy(key->data, entry->hostname, key->length);
     key->data[key->length++] = ':';
@@ -151,8 +140,11 @@ static int key_init(struct string *key, const struct proxy_server_entry *entry)
 
 int proxy_balance_init(const struct proxy_entry_array *config)
 {
-    if (!dict_init(&servers, DICT_SIZE_BASE)) return ERROR_MEMORY;
-
+    if (!dict_init(&servers, DICT_SIZE_BASE))
+    {
+        return ERROR_MEMORY;
+    }
+    
     size_t i, j;
     char buffer[SERVER_KEY_SIZE_LIMIT];
     struct string key;
@@ -171,16 +163,25 @@ int proxy_balance_init(const struct proxy_entry_array *config)
     {
         for(j = 0; j < config->entry[i].server_list->length; j++)
         {
-            if (key_init(&key, config->entry[i].server_list->entry + j) < 0) return -2;
+            if (key_init(&key, config->entry[i].server_list->entry + j) < 0)
+            {
+                return -2;
+            }
 
             value = mk_api->mem_alloc(sizeof(struct server));
-            if (!value) return ERROR_MEMORY; /* memory error */
+            if (!value)
+            {
+                return ERROR_MEMORY; /* memory error */
+            }
             value->connections = 0;
             value->offline_count = 0;
             value->offline_last = 0;
 
             status = dict_add(&servers, &key, value); /* dict_add will auto reject all repeated entries */
-            if (status == ERROR_MEMORY) return ERROR_MEMORY;
+            if (status == ERROR_MEMORY)
+            {
+                return ERROR_MEMORY;
+            }
         }
     }
 
@@ -206,14 +207,20 @@ static int balance_connect(const struct proxy_server_entry *entry)
     if (highavail_timeout)
     {
         key.data = buffer;
-        if (key_init(&key, entry) < 0) return -1;
-
+        if (key_init(&key, entry) < 0)
+        {
+            return -1;
+        }
+        
         info = dict_get(&servers, &key);
 
         pthread_mutex_lock(&servers_mutex);
         bool cancel = (((now - info->offline_last) < highavail_timeout) && (info->offline_count >= highavail_count));
         pthread_mutex_unlock(&servers_mutex);
-        if (cancel) return -1;
+        if (cancel)
+        {
+            return -1;
+        }
     }
 
     /*
@@ -253,7 +260,10 @@ int proxy_balance_naive(const struct proxy_server_entry_array *server_list, unsi
     for(index = 0; index < server_list->length; ++index)
     {
         fd = balance_connect(server_list->entry + ((index + seed) % server_list->length));
-        if (fd >= 0) return fd;
+        if (fd >= 0)
+        {
+            return fd;
+        }
     }
 
     return -1;
@@ -269,7 +279,10 @@ int proxy_balance_hash(const struct proxy_server_entry_array *server_list, int s
 
     /* Retrieve socket source address struct and extract the source IP address from it. */
     length = sizeof(source);
-    if (getpeername(sock, (struct sockaddr *)&source, &length) < 0) return -1;
+    if (getpeername(sock, (struct sockaddr *)&source, &length) < 0)
+    {
+        return -1;
+    }
     switch (source.ss_family)
     {
     case AF_INET:
@@ -341,7 +354,10 @@ int proxy_balance_leastconnections(const struct proxy_server_entry_array *server
 
     key.data = buffer;
 
-    if (key_init(&key, server_list->entry) < 0) return -2;
+    if (key_init(&key, server_list->entry) < 0)
+    {
+        return -2;
+    }
     info_min = dict_get(&servers, &key);
     index_min = 0;
 
@@ -350,7 +366,11 @@ int proxy_balance_leastconnections(const struct proxy_server_entry_array *server
     /* Find the slave server with the least number of connections. */
     for(index = 1; index < server_list->length; ++index)
     {
-        if (key_init(&key, server_list->entry + index) < 0) return -2;
+        if (key_init(&key, server_list->entry + index) < 0)
+        {
+            return -2;
+        }
+        
         info = dict_get(&servers, &key);
 
         if (info->connections < info_min->connections)
@@ -379,55 +399,45 @@ void proxy_balance_close(void *connection)
     info->connections -= 1;
     pthread_mutex_unlock(&servers_mutex);
 
-    mk_api->mem_free(connection);
+    free(connection);
 }
 
 struct string *proxy_balance_generate_statistics(struct session_request *sr)
 {
-size_t length=39;
-struct dict_iterator it;
-const struct dict_item *item;
-struct server *value;
-//unsigned tmpval=0;
-//unsigned index=0; 
-//char buffer[10];
-struct string *html;
+    size_t length=39;
+    struct dict_iterator it;
+    const struct dict_item *item;
+    struct server *value;
+    struct string *html;
 
-/*
-(void)buffer;
-(void)tmpval;
-(void)value;
-*/
+    if(!stats_url.data)
+    {
+        return 0;
+    }
+    if(sr->uri_processed.len != stats_url.length)
+    {
+        return 0;
+    }
+    if(memcmp(sr->uri_processed.data,stats_url.data,stats_url.length))
+    {
+        return 0;
+    }
 
-if(!stats_url.data)return 0;
-if(sr->uri_processed.len != stats_url.length)return 0;
-if(memcmp(sr->uri_processed.data,stats_url.data,stats_url.length))return 0;
+    html = mk_api->mem_alloc( sizeof(struct string) );
+    //Calculating the length
 
-//Allocating maximal necessary memory
-/*Template:
-Static part: <html><head></head><body></body></html> Length:39
-Dynamic part: <br><b>hostname1:port1</b><br>Connections:num<br>Offline Count:num<br>Offline Last Check:num<br>
-TODO: for each number we allocate 10 bytes of memory, because without using locking, the numbers may change during the length calculation and to make SEGFAULT
-*/
-
-html = mk_api->mem_alloc( sizeof(struct string) );
-//Calculating the length
-
-for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
+    for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
     {
         length += item->key_size + sizeof("<br><b></b><br>") - 1 + sizeof("Connections:<br>") - 1 + 10 + sizeof("Offline Count:<br>") - 1 + 10 + sizeof("Offline Last Check:<br>") - 1 + 10 + 1 ;
     }
-    
-html->data = mk_api->mem_alloc(length * sizeof(char));
 
-#define STR(s) (s), sizeof(s) - 1
+    html->data = mk_api->mem_alloc(length * sizeof(char));
 
-char *start = format_bytes(html->data, STR("<html><head></head><body>"));
+    #define STR(s) (s), sizeof(s) - 1
 
-//memcpy(html->data,"<html><head></head><body>",sizeof("<html><head></head><body>") - 1);
-//index += sizeof("<html><head></head><body>") - 1;
+    char *start = format_bytes(html->data, STR("<html><head></head><body>"));
 
-for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
+    for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
     {
         value = item->value;
 
@@ -446,51 +456,14 @@ for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
         start = format_bytes(start, STR("Offline Last Check:"));
         start = format_uint(start, value->offline_last);
         start = format_bytes(start, STR("<br />"));
-        
-        /*memcpy(html->data + index,"<br><b>",sizeof("<br><b>") - 1);
-        index  += sizeof("<br><b>") - 1;
-        memcpy(html->data + index,item->key_data, item->key_size);
-        index  += item->key_size;
-        memcpy(html->data + index,"</b><br>",sizeof("</b><br>") - 1);
-        index  += sizeof("</b><br>") - 1;*/
-        
-        /*memcpy(html->data + index,"Connections:",sizeof("Connections:") - 1);
-        index  += sizeof("Connections:") - 1;
-        tmpval=value->connections;
-        format_uint(buffer,tmpval,0);
-        memcpy(html->data + index,buffer,format_uint_length(tmpval));
-        index  +=format_uint_length(tmpval); // TODO may be there is no point of calculating the length again because format_uint()-buffer is the len
-        memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
-        index  += sizeof("<br>") - 1;*/
-        
-        /*memcpy(html->data + index,"Offline Count:",sizeof("Offline Count:") - 1);
-        index  += sizeof("Offline Count:") - 1;
-        tmpval=value->offline_count;
-        format_uint(buffer,tmpval,0);
-        memcpy(html->data + index,buffer,format_uint_length(tmpval));
-        index  +=format_uint_length(tmpval);
-        memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
-        index  += sizeof("<br>") - 1;*/
-        
-        /*memcpy(html->data + index,"Offline Last Check:",sizeof("Offline Last Check:") - 1);
-        index  += sizeof("Offline Last Check:") - 1;
-        tmpval=value->offline_last;
-        format_uint(buffer,tmpval,0);
-        memcpy(html->data + index,buffer,format_uint_length(tmpval));
-        index  +=format_uint_length(tmpval);
-        memcpy(html->data + index,"<br>",sizeof("<br>") - 1);
-        index  += sizeof("<br>") - 1;*/
     }
 
-start = format_bytes(start, STR("</body></html>"));
+    start = format_bytes(start, STR("</body></html>"));
 
-#undef STR
+    #undef STR
 
-/*memcpy(html->data + index,"</body></html>",sizeof("</body></html>") - 1);
-index += sizeof("</body></html>") - 1;*/
+    html->length = start - html->data;
+    html->data[html->length] = 0;
 
-html->length = start - html->data;
-html->data[html->length] = 0;
-
-return html;
+    return html;
 }
