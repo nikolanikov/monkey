@@ -77,7 +77,7 @@ static int response_buffer_adjust(struct proxy_peer *peer, size_t size)
 
     if (!peer->response.size)
     {
-        peer->response.buffer = malloc(size);
+        peer->response.buffer = mk_api->mem_alloc(size);
         if (!peer) return 0;
     }
     else if (peer->response.size < size)
@@ -104,7 +104,7 @@ static int response_buffer_adjust(struct proxy_peer *peer, size_t size)
 static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *proxy_config, int sock)
 {
     const struct session_request *sr = peer->sr;
-    char *string = malloc(sr->uri_processed.len + 1);
+    char *string = mk_api->mem_alloc(sr->uri_processed.len + 1);
     if (!string) return -1;
     memcpy(string, sr->uri_processed.data, sr->uri_processed.len);
     string[sr->uri_processed.len] = 0;
@@ -112,7 +112,7 @@ static int slave_connect(struct proxy_peer *peer, struct proxy_entry_array *prox
     MK_TRACE("Balancer for %s", string);
 
     struct proxy_entry *match = proxy_check_match(string, proxy_config);
-    free(string);
+    mk_api->mem_free(string);
     if (!match) return -1;
 
     peer->connection = 0;
@@ -217,8 +217,8 @@ static int proxy_close(int fd)
         return MK_PLUGIN_RET_EVENT_OWNED;
     }
 
-    free(peer->response.buffer);
-    free(peer);
+    mk_api->mem_free(peer->response.buffer);
+    mk_api->mem_free(peer);
 
     return MK_PLUGIN_RET_EVENT_OWNED;
     //return MK_PLUGIN_RET_EVENT_CLOSE;
@@ -245,7 +245,7 @@ int _mkp_init(struct plugin_api **api, char *confdir)
 
 void _mkp_core_thctx(void)
 {
-    struct proxy_context *context = malloc(sizeof(struct proxy_context));
+    struct proxy_context *context = mk_api->mem_alloc(sizeof(struct proxy_context));
     if (!context)
     {
         mk_err("ProxyReverse: Failed to allocate proxy reverse context.");
@@ -308,13 +308,13 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
 
             mk_api->socket_send(cs->socket, html_stats->data, html_stats->length);
             
-            free(html_stats->data);
-            free(html_stats);
+            mk_api->mem_free(html_stats->data);
+            mk_api->mem_free(html_stats);
             
             return MK_PLUGIN_RET_END;
         }
         
-        peer = malloc(sizeof(struct proxy_peer));
+        peer = mk_api->mem_alloc(sizeof(struct proxy_peer));
         if (!peer) return MK_PLUGIN_RET_CLOSE_CONX;
 
         peer->sr = sr;
@@ -322,7 +322,7 @@ int _mkp_stage_30(struct plugin *plugin, struct client_session *cs, struct sessi
         peer->fd_slave = slave_connect(peer, proxy_config, cs->socket);
         if (peer->fd_slave < 0)
         {
-            free(peer);
+            mk_api->mem_free(peer);
             return MK_PLUGIN_RET_CLOSE_CONX; // TODO
         }
 

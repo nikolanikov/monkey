@@ -56,7 +56,7 @@ static uint32_t hash(const char *string, size_t size)
         }
     }
 
-    free(dict->items);
+    mk_api->mem_free(dict->items);
     dict->items = dict_new.items;
     dict->size = size;
 
@@ -119,7 +119,7 @@ int dict_set(struct dict *dict, const struct string *key, void *value, void **re
         char *key_data;
         void *value;
         struct dict_item *_next;
-    } *slot = malloc(sizeof(struct dict_item) + sizeof(char) * (key->length + 1));
+    } *slot = mk_api->mem_alloc(sizeof(struct dict_item) + sizeof(char) * (key->length + 1));
     if (!slot) return ERROR_MEMORY;
 
     /* Initialize the allocated memory. */
@@ -157,7 +157,7 @@ void *dict_remove(struct dict *dict, const struct string *key)
             /* This is the item we are looking for. */
             void *value = item->value;
             *items = item->_next;
-            free(item);
+            mk_api->mem_free(item);
             dict->count -= 1;
             return value;
         }
@@ -181,10 +181,10 @@ void dict_term(struct dict *dict)
                 prev = it.item;
                 it.item = it.item->_next;
 
-                free(prev->value); // TODO: this should be done by the user
-                free(prev);
+                mk_api->mem_free(prev->value); // TODO: this should be done by the user
+                mk_api->mem_free(prev);
             } while (it.item);
         }
 
-    free(dict->items);
+    mk_api->mem_free(dict->items);
 }

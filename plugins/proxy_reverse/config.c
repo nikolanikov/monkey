@@ -234,7 +234,7 @@ static struct proxy_entry_array *proxy_config_read_entries(struct proxy_cnf_defa
             }
             else
             {
-                entry_array->entry[entry_num].regex_array = malloc(sizeof(struct match_regex_array) + sizeof(regex_t) * i);
+                entry_array->entry[entry_num].regex_array = mk_api->mem_alloc(sizeof(struct match_regex_array) + sizeof(regex_t) * i);
                 if (!entry_array->entry[entry_num].regex_array)
                 {
                     mk_err("ProxyReverse: PROXY_ENTRY Memory error.");

@@ -173,7 +173,7 @@ int proxy_balance_init(const struct proxy_entry_array *config)
         {
             if (key_init(&key, config->entry[i].server_list->entry + j) < 0) return -2;
 
-            value = malloc(sizeof(struct server));
+            value = mk_api->mem_alloc(sizeof(struct server));
             if (!value) return ERROR_MEMORY; /* memory error */
             value->connections = 0;
             value->offline_count = 0;
@@ -379,7 +379,7 @@ void proxy_balance_close(void *connection)
     info->connections -= 1;
     pthread_mutex_unlock(&servers_mutex);
 
-    free(connection);
+    mk_api->mem_free(connection);
 }
 
 struct string *proxy_balance_generate_statistics(struct session_request *sr)
@@ -410,7 +410,7 @@ Dynamic part: <br><b>hostname1:port1</b><br>Connections:num<br>Offline Count:num
 TODO: for each number we allocate 10 bytes of memory, because without using locking, the numbers may change during the length calculation and to make SEGFAULT
 */
 
-html = malloc( sizeof(struct string) );
+html = mk_api->mem_alloc( sizeof(struct string) );
 //Calculating the length
 
 for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
@@ -418,7 +418,7 @@ for(item = dict_first(&it, &servers); item; item = dict_next(&it, &servers))
         length += item->key_size + sizeof("<br><b></b><br>") - 1 + sizeof("Connections:<br>") - 1 + 10 + sizeof("Offline Count:<br>") - 1 + 10 + sizeof("Offline Last Check:<br>") - 1 + 10 + 1 ;
     }
     
-html->data = malloc(length * sizeof(char));
+html->data = mk_api->mem_alloc(length * sizeof(char));
 
 #define STR(s) (s), sizeof(s) - 1
 
