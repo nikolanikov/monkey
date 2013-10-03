@@ -21,8 +21,8 @@
 /* String literal. Contains length and pointer to the data. The data is usually NUL-terminated so that it can be passed to standard functions without modification. */
 struct string
 {
-	char *data;
-	size_t length;
+    char *data;
+    size_t length;
 };
 
 /*
@@ -43,20 +43,20 @@ struct string *string_alloc(const char *data, size_t length);
 
 struct dict
 {
-	struct dict_item
-	{
-		size_t key_size;
-		const char *key_data;
-		void *value;
-		struct dict_item *_next;
-	} **items;
-	size_t count, size;
+    struct dict_item
+    {
+        size_t key_size;
+        const char *key_data;
+        void *value;
+        struct dict_item *_next;
+    } **items;
+    size_t count, size;
 };
 
 struct dict_iterator
 {
-	size_t index;
-	struct dict_item *item;
+    size_t index;
+    struct dict_item *item;
 };
 
 /* Initializes dictionary iterator and returns the first item. */
