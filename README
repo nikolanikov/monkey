@@ -9,6 +9,10 @@ Monkey HTTP Daemon
  aims to behave as a fully HTTP development framework, so it can be extended
  as desired through the plugins interface.
 
+Contribution
+===================
+My contribution is mainly related with GSoC proxy_reverse plugin that can be found in plugins/proxy_reverse
+ 
 Features
 ======== 
 
@@ -21,7 +25,7 @@ Features
                     directory listing, etc.
  - Embeddable as a shared library (only one context supported currently)
 
-
+ 
 Requirements
 ============
  Monkey requires the following components:
